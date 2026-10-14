@@ -110,14 +110,18 @@ jobs:
         run: |
           set -euo pipefail
           echo "== config symbols (fatal) =="
+          # want=y|m -> line must read "SYM=want". want=n -> must NOT be y/m,
+          # because kconfig writes a bool 'n' as "# SYM is not set", not "SYM=n".
           check() {
-            local sym="$1" want="$2"
-            local got
-            got="$(grep -m1 -E "^${sym}=" .config || true)"
-            printf '  %-58s %s\n' "$sym" "${got:-<MISSING>}"
-            if [ "$got" != "${sym}=${want}" ]; then
-              echo "  ^^^ expected ${sym}=${want}"
-              exit 1
+            local sym="$1" want="$2" got
+            if [ "$want" = "n" ]; then
+              if grep -qE "^${sym}=[ym]$" .config; then got="SET"; else got="not-set"; fi
+              printf '  %-58s %s\n' "$sym" "$got"
+              [ "$got" = "not-set" ] || { echo "  ^^^ expected ${sym} to be n (unset)"; exit 1; }
+            else
+              got="$(grep -m1 -E "^${sym}=" .config || true)"
+              printf '  %-58s %s\n' "$sym" "${got:-<MISSING>}"
+              [ "$got" = "${sym}=${want}" ] || { echo "  ^^^ expected ${sym}=${want}"; exit 1; }
             fi
           }
           check CONFIG_TARGET_qualcommax_ipq50xx_DEVICE_jdcloud_re-cs-03 y
@@ -132,7 +136,8 @@ jobs:
 
           echo "== config symbols (soft) =="
           for sym in CONFIG_PACKAGE_luci-app-qbittorrent CONFIG_PACKAGE_luci-app-passwall2_INCLUDE_SingBox; do
-            printf '  %-58s %s\n' "$sym" "$(grep -m1 -E "^${sym}=" .config || echo '<absent>')"
+            if grep -qE "^${sym}=[ym]$" .config; then s="$(grep -m1 -E "^${sym}=" .config)"; else s="not-set/absent"; fi
+            printf '  %-58s %s\n' "$sym" "$s"
           done
 
           echo "== patch artifacts (fatal) =="
