@@ -866,7 +866,7 @@ index f1a9467..8208799 100644
  yuncore,ax830)
  	migrate_radio 'platform/soc@0/b00a040.wifi1' 'platform/soc@0/b00a040.wifi'
 diff --git a/target/linux/qualcommax/ipq50xx/base-files/lib/upgrade/platform.sh b/target/linux/qualcommax/ipq50xx/base-files/lib/upgrade/platform.sh
-index e78eb55..24a2aac 100644
+index e78eb55..820a480 100644
 --- a/target/linux/qualcommax/ipq50xx/base-files/lib/upgrade/platform.sh
 +++ b/target/linux/qualcommax/ipq50xx/base-files/lib/upgrade/platform.sh
 @@ -210,6 +210,12 @@ platform_do_upgrade() {
@@ -874,8 +874,8 @@ index e78eb55..24a2aac 100644
  		glinet_do_upgrade "$1"
  		;;
 +	jdcloud,re-cs-03)
-+		CI_KERNPART="0:HLOS_1"
-+		CI_ROOTPART="rootfs_1"
++		CI_KERNPART="0:HLOS"
++		CI_ROOTPART="rootfs"
 +		CI_DATAPART="rootfs_data"
 +		emmc_do_upgrade "$1"
 +		;;
