@@ -14,3 +14,4 @@
 
 - 2026-10-14 · 更新 CI(.github/workflows/build.yaml) 确保更改被正确应用: (1) 启用 push 触发(仅 paths: build.yaml/re-cs-03.config/patches/**/files/**/zip), build 条件加 push; (2) 硬化补丁步骤 set -euo pipefail + git apply 失败即停; (3) 新增 Verify 步骤: 在 make defconfig 后断言关键 config(设备/ALL_KMODS/passwall2=n/passwall kmod=y)与补丁产物(dts/02_network/platform.sh/art)存在, 不符即 FAIL; (4) 顺手修 re-cs-03.config qbittorrent 笔误 ==y→=y · 用 pyyaml 校验 YAML 通过
 - 2026-10-14 · 修 verify 对 =n 的判定(kconfig 写 # X is not set 而非 X=n), 提交 ac4518b 并推送; 重跑 run 38567599901 → 补丁步骤+Verify 均 PASS, 进入 Download/Build. 另: 仓库清理(deletions/uboot.mbn/WORKLOG/board.dtb)已提交推送 99330c2
+- 2026-10-14 · 需求: 设备名改回 OpenWrt + 预设 root 密码 password · 发现补丁将 config_generate hostname 改成 Houyi(保留 timezone CST-8) → 改回 OpenWrt; 新增 files/etc/shadow(root:\\$... = password, 其余账号锁定); verify 步骤加 hostname/shadow 断言 · 用 temp/upstream 上游树 git apply --check 通过且 hostname=OpenWrt · 提交 3f01735 推送并 dispatch run 38569357724 → Verify PASS, 进入构建
