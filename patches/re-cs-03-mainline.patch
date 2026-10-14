@@ -1,8 +1,8 @@
 diff --git a/package/base-files/files/bin/config_generate b/package/base-files/files/bin/config_generate
-index 18fae054d4..29ade5ea0b 100755
+index 1243938..f345a20 100644
 --- a/package/base-files/files/bin/config_generate
 +++ b/package/base-files/files/bin/config_generate
-@@ -313,9 +313,9 @@ generate_static_system() {
+@@ -318,9 +318,9 @@ generate_static_system() {
  	uci -q batch <<-EOF
  		delete system.@system[0]
  		add system system
@@ -16,7 +16,7 @@ index 18fae054d4..29ade5ea0b 100755
  		set system.@system[-1].log_size='128'
  		set system.@system[-1].urandom_seed='0'
 diff --git a/package/base-files/files/etc/sysctl.conf b/package/base-files/files/etc/sysctl.conf
-index 9ce5061657..ca3098ce74 100644
+index 9ce5061..ca3098c 100644
 --- a/package/base-files/files/etc/sysctl.conf
 +++ b/package/base-files/files/etc/sysctl.conf
 @@ -1,2 +1,3 @@
@@ -24,21 +24,21 @@ index 9ce5061657..ca3098ce74 100644
  # that directory is not backed-up by default and will not survive a reimage
 +net.netfilter.nf_conntrack_max=165535
 diff --git a/package/boot/uboot-tools/uboot-envtools/files/qualcommax_ipq50xx b/package/boot/uboot-tools/uboot-envtools/files/qualcommax_ipq50xx
-index d4169fa663..41cffddd79 100644
+index c0aef88..33b59f8 100644
 --- a/package/boot/uboot-tools/uboot-envtools/files/qualcommax_ipq50xx
 +++ b/package/boot/uboot-tools/uboot-envtools/files/qualcommax_ipq50xx
-@@ -30,6 +30,9 @@ yuncore,ax830|\
- yuncore,ax850)
- 	ubootenv_add_mtd "0:APPSBLENV" "0x0" "0x10000" "0x10000"
+@@ -25,6 +25,9 @@ tplink,archer-ax55-v1|\
+ tplink,eap650-outdoor-v1)
+ 	ubootenv_add_mtd "0:APPSBLENV" "0x0" "0x40000" "0x20000"
  	;;
 +jdcloud,re-cs-03)
-+	ubootenv_add_uci_config "/dev/mmcblk0p10" "0x0" "0x40000" "0x10000"
++	ubootenv_add_mmc "0:APPSBLENV" "" "0x0" "0x40000" "0x10000"
 +	;;
- esac
- 
- config_load ubootenv
+ linksys,mr2000|\
+ linksys,mr5500|\
+ linksys,mx2000|\
 diff --git a/package/firmware/ipq-wifi/Makefile b/package/firmware/ipq-wifi/Makefile
-index 47b2f8788b..3076eb7ff4 100644
+index 7adabc4..308290d 100644
 --- a/package/firmware/ipq-wifi/Makefile
 +++ b/package/firmware/ipq-wifi/Makefile
 @@ -16,6 +16,11 @@ include $(INCLUDE_DIR)/package.mk
@@ -53,22 +53,22 @@ index 47b2f8788b..3076eb7ff4 100644
  # Use ath10k-bdencoder from https://github.com/qca/qca-swiss-army-knife.git
  # to generate the board-* files here.
  #
-@@ -46,6 +51,7 @@ ALLWIFIBOARDS:= \
+@@ -52,6 +57,7 @@ ALLWIFIBOARDS:= \
  	iodata_wn-dax3000gr \
  	jdcloud_re-cs-02 \
  	jdcloud_re-ss-01 \
 +	jdcloud_re-cs-03 \
  	link_nn6000 \
  	linksys_homewrk \
- 	linksys_mr5500 \
-@@ -225,6 +231,7 @@ $(eval $(call generate-ipq-wifi-package,glinet_gl-axt1800,GL.iNet GL-AXT1800))
+ 	linksys_mr2000 \
+@@ -260,6 +266,7 @@ $(eval $(call generate-ipq-wifi-package,ignitenet_ss-w2-ac2600,Ignitenet SS-W2-A
  $(eval $(call generate-ipq-wifi-package,iodata_wn-dax3000gr,I-O DATA WN-DAX3000GR))
  $(eval $(call generate-ipq-wifi-package,jdcloud_re-cs-02,JDCloud RE-CS-02))
  $(eval $(call generate-ipq-wifi-package,jdcloud_re-ss-01,JDCloud RE-SS-01))
 +$(eval $(call generate-ipq-wifi-package,jdcloud_re-cs-03,JDCloud RE-CS-03))
  $(eval $(call generate-ipq-wifi-package,link_nn6000,Link NN6000))
  $(eval $(call generate-ipq-wifi-package,linksys_homewrk,Linksys HomeWRK))
- $(eval $(call generate-ipq-wifi-package,linksys_mr5500,Linksys MR5500))
+ $(eval $(call generate-ipq-wifi-package,linksys_mr2000,Linksys MR2000))
 diff --git a/package/firmware/ipq-wifi/files/board-jdcloud_re-cs-03.ipq5018 b/package/firmware/ipq-wifi/files/board-jdcloud_re-cs-03.ipq5018
 new file mode 100644
 index 0000000000000000000000000000000000000000..29f43cd0f54e0863644a515488cc80187990d324
@@ -421,10 +421,12 @@ HcmV?d00001
 
 diff --git a/target/linux/qualcommax/dts/ipq5018-re-cs-03.dts b/target/linux/qualcommax/dts/ipq5018-re-cs-03.dts
 new file mode 100644
-index 0000000000..16d465448d
+index 0000000..fb9eac6
 --- /dev/null
 +++ b/target/linux/qualcommax/dts/ipq5018-re-cs-03.dts
-@@ -0,0 +1,386 @@
+@@ -0,0 +1,363 @@
++// SPDX-License-Identifier: GPL-2.0-or-later OR MIT
++
 +/dts-v1/;
 +
 +#include "ipq5018.dtsi"
@@ -446,9 +448,9 @@ index 0000000000..16d465448d
 +		led-upgrade = &led_system_red;
 +		serial0 = &blsp1_uart1;
 +		sdhc1 = &sdhc_1;
-+		ethernet0 = &dp1;
-+		ethernet1 = &dp2;
-+		label-mac-device = &dp2;
++		ethernet0 = &gmac0;
++		ethernet1 = &gmac1;
++		label-mac-device = &gmac1;
 +	};
 +
 +	chosen {
@@ -577,7 +579,7 @@ index 0000000000..16d465448d
 +			bias-pull-up;
 +		};
 +	};
-+	
++
 +	leds_pins: leds-pins {
 +		mux {
 +			pins = "gpio31", "gpio32", "gpio33";
@@ -634,39 +636,31 @@ index 0000000000..16d465448d
 + *    | +------+   +--------+ |       | +--------+   +------+ |
 + *    |_______________________|       |_______________________|
 + *
++ *   MAC0 -> GE Phy -> QCA8337 Phy4 (wan)
++ *   MAC1 ---SGMII---> QCA8337 SerDes -> switch CPU port 6
 + * ===============================================================
 + */
 +
-+ &switch {
++/* SGMII reference clock for the QCA8337 SerDes */
++&uniphy0 {
 +	status = "okay";
 +
-+	switch_mac_mode = <MAC_MODE_SGMII_CHANNEL0>;
-+
-+	qcom,port_phyinfo {
-+		// MAC0 -> GE Phy -> QCA8337 Phy4
-+		port@0 {
-+			port_id = <1>;
-+			mdiobus = <&mdio0>;
-+			phy_address = <7>;
-+		};
-+
-+		// MAC1 ---SGMII---> QCA8337 SerDes
-+		port@1 {
-+			port_id = <2>;
-+			forced-speed = <1000>;
-+			forced-duplex = <1>;
-+		};
-+	};
++	assigned-clocks = <&uniphy0 UNIPHY_CLK_REF>;
++	assigned-clock-rates = <UNIPHY_REFCLK_25MHZ>;
 +};
 +
-+&dp1 {
-+	label = "wan";
++// MAC0 -> GE Phy -> QCA8337 Phy4
++&gmac0 {
 +	status = "okay";
++
++	label = "wan";
 +};
 +
 +// MAC1 ---SGMII---> QCA8337 SerDes
-+&dp2 {
++&gmac1 {
 +	status = "okay";
++
++	phy-mode = "sgmii";
 +
 +	fixed-link {
 +		speed = <1000>;
@@ -678,10 +672,9 @@ index 0000000000..16d465448d
 +	status = "okay";
 +};
 +
-+/*&ge_phy {
++&ge_phy {
 +	qcom,dac-preset-short-cable;
-+	status = "okay";
-+};*/
++};
 +
 +&mdio1 {
 +	status = "okay";
@@ -705,12 +698,12 @@ index 0000000000..16d465448d
 +		reg = <2>;
 +	};
 +
-+	// QCA8337 Phy3 -> 
++	// QCA8337 Phy3 -> unused
 +	qca8337_3: ethernet-phy@3 {
 +		reg = <3>;
 +	};
 +
-+	// QCA8337 Phy4 -> WAN
++	// QCA8337 Phy4 -> WAN (driven by the SoC GE Phy)
 +	/*qca8337_4: ethernet-phy@4 {
 +		reg = <4>;
 +	};*/
@@ -722,33 +715,33 @@ index 0000000000..16d465448d
 +		#address-cells = <1>;
 +		#size-cells = <0>;
 +
-+		ports {
++		ethernet-ports {
 +			#address-cells = <1>;
 +			#size-cells = <0>;
 +
-+			port@1 {
++			ethernet-port@1 {
 +				reg = <1>;
 +				label = "lan3";
 +				phy-handle = <&qca8337_0>;
 +			};
 +
-+			port@2 {
++			ethernet-port@2 {
 +				reg = <2>;
 +				label = "lan2";
 +				phy-handle = <&qca8337_1>;
 +			};
 +
-+			port@3 {
++			ethernet-port@3 {
 +				reg = <3>;
 +				label = "lan1";
 +				phy-handle = <&qca8337_2>;
 +			};
 +
-+			port@6 {
++			ethernet-port@6 {
 +				reg = <6>;
 +				label = "cpu";
 +				phy-mode = "sgmii";
-+				ethernet = <&dp2>;
++				ethernet = <&gmac1>;
 +				qca,sgmii-enable-pll;
 +
 +				fixed-link {
@@ -761,30 +754,15 @@ index 0000000000..16d465448d
 +};
 +
 +&q6v5_wcss {
-+	//compatible = "qcom,ipq5018-q6-mpd";
-+	//reg = <0x0cd00000 0x4040>;
-+
-+	//clocks = <&gcc GCC_XO_CLK>,
-+	//	 <&gcc GCC_SLEEP_CLK_SRC>,
-+	//	 <&gcc GCC_SYS_NOC_WCSS_AHB_CLK>;
-+	///delete-property/ clock-names;
-+
-+	/* The QCN6102 radio should map to UPD ID 2. Without       */
++	/* The QCN6122 radio should map to UPD ID 2. Without       */
 +	/* bootargs, the firmware will expect it to be on UPD ID 3 */
 +	boot-args = <
-+		/*       type:	*/	0x2	/* PCIE0	*/
-+		/*     length:	*/	4
-+		/*     UPD ID:	*/	2
-+		/* reset GPIO:	*/	15
-+		/*   reserved:	*/	0 0>;
-+
-+	/*glink-edge {
-+		qrtr_requests {
-+			qcom,glink-channels = "IPCRTR";
-+		};
-+	};*/
++		/*       type: */ 0x2 /* PCIE0   */
++		/*     length: */ 4
++		/*     UPD ID: */ 2
++		/* reset GPIO: */ 15
++		/*   reserved: */ 0 0>;
 +};
-+
 +
 +&wifi {
 +	// IPQ5018
@@ -800,7 +778,7 @@ index 0000000000..16d465448d
 +};
 +
 +&wifi1 {
-+	// QCN6102 5G
++	// QCN6122 5G
 +	status = "okay";
 +
 +	qcom,rproc = <&q6_wcss_pd2>;
@@ -810,30 +788,25 @@ index 0000000000..16d465448d
 +	qcom,bdf-addr = <0x4d100000>;
 +	qcom,m3-dump-addr = <0x4df00000>;
 +};
-+
 diff --git a/target/linux/qualcommax/image/ipq50xx.mk b/target/linux/qualcommax/image/ipq50xx.mk
-index 6a6a50d6f7..f2b9ce69d7 100644
+index f9446f4..7f75dd1 100644
 --- a/target/linux/qualcommax/image/ipq50xx.mk
 +++ b/target/linux/qualcommax/image/ipq50xx.mk
-@@ -91,6 +91,26 @@ define Device/iodata_wn-dax3000gr
+@@ -185,6 +185,22 @@ define Device/iodata_wn-dax3000gr
  endef
  TARGET_DEVICES += iodata_wn-dax3000gr
  
-+define Device/EmmcImage
-+	IMAGES := factory.bin sysupgrade.bin
-+	IMAGE/factory.bin := append-kernel | pad-to 6144k | append-rootfs | append-metadata
-+	IMAGE/sysupgrade.bin/squashfs := append-rootfs | pad-to 64k | sysupgrade-tar rootfs=$$$$@ | append-metadata
-+endef
-+
 +define Device/jdcloud_re-cs-03
 +	$(call Device/FitImage)
-+	$(call Device/EmmcImage)
 +	SOC := ipq5018
 +	BLOCKSIZE := 64k
-+	KERNEL_SIZE :=6144k
++	KERNEL_SIZE := 6144k
 +	DEVICE_VENDOR := JDCloud
 +	DEVICE_MODEL := AX3000
 +	DEVICE_DTS_CONFIG := config@mp03.5-c2
++	IMAGES := factory.bin sysupgrade.bin
++	IMAGE/factory.bin := append-kernel | pad-to $$$$(KERNEL_SIZE) | append-rootfs | append-metadata
++	IMAGE/sysupgrade.bin/squashfs := append-rootfs | pad-to 64k | sysupgrade-tar rootfs=$$$$@ | append-metadata
 +	DEVICE_PACKAGES := ath11k-firmware-ipq5018-qcn6122 \
 +		ipq-wifi-jdcloud_re-cs-03
 +endef
@@ -843,49 +816,48 @@ index 6a6a50d6f7..f2b9ce69d7 100644
  	$(call Device/FitImageLzma)
  	DEVICE_VENDOR := Linksys
 diff --git a/target/linux/qualcommax/ipq50xx/base-files/etc/board.d/02_network b/target/linux/qualcommax/ipq50xx/base-files/etc/board.d/02_network
-index 05bed90e27..d3581881f8 100644
+index d4cc586..0cdfde9 100644
 --- a/target/linux/qualcommax/ipq50xx/base-files/etc/board.d/02_network
 +++ b/target/linux/qualcommax/ipq50xx/base-files/etc/board.d/02_network
-@@ -19,6 +19,7 @@ ipq50xx_setup_interfaces()
+@@ -24,6 +24,7 @@ ipq50xx_setup_interfaces()
+ 		;;
+ 	cmcc,mr3000d-ci|\
+ 	cmcc,rax3000q|\
++	jdcloud,re-cs-03|\
  	linksys,mx2000|\
  	linksys,mx5500|\
  	linksys,spnmx56|\
-+	jdcloud,re-cs-03|\
- 	xiaomi,ax6000)
- 		ucidef_set_interfaces_lan_wan "lan1 lan2 lan3" "wan"
- 		;;
 diff --git a/target/linux/qualcommax/ipq50xx/base-files/etc/hotplug.d/firmware/11-ath11k-caldata b/target/linux/qualcommax/ipq50xx/base-files/etc/hotplug.d/firmware/11-ath11k-caldata
-index c34aadf7d4..7ab58be257 100644
+index 5658048..47e3b77 100644
 --- a/target/linux/qualcommax/ipq50xx/base-files/etc/hotplug.d/firmware/11-ath11k-caldata
 +++ b/target/linux/qualcommax/ipq50xx/base-files/etc/hotplug.d/firmware/11-ath11k-caldata
-@@ -21,6 +21,10 @@ case "$FIRMWARE" in
- 		ath11k_patch_mac $(macaddr_add $(get_mac_label_dt) 3) 0
+@@ -35,6 +35,10 @@ case "$FIRMWARE" in
+ 		ath11k_patch_mac $(macaddr_add $(mtd_get_mac_binary "0:art" 0x6) 2) 0
  		ath11k_set_macflag
  		;;
 +	jdcloud,re-cs-03)
 +		caldata_extract_mmc "0:ART" 0x1000 0x20000
 +		ath11k_remove_regdomain
 +		;;
+ 	linksys,mr2000|\
  	linksys,mr5500|\
  	linksys,mx2000|\
- 	linksys,mx5500|\
-@@ -65,6 +69,11 @@ case "$FIRMWARE" in
+@@ -119,6 +123,10 @@ case "$FIRMWARE" in
  		ath11k_patch_mac $(macaddr_add $(get_mac_label_dt) 4) 0
  		ath11k_set_macflag
  		;;
 +	jdcloud,re-cs-03)
 +		caldata_extract_mmc "0:ART" 0x26800 0x20000
-+		#caldata_extract_mmc "0:ART" 0x4c000 0x20000
 +		ath11k_remove_regdomain
 +		;;
+ 	linksys,mr2000|\
  	linksys,mx2000)
  		caldata_extract "0:art" 0x26800 0x20000
- 		label_mac=$(mtd_get_mac_ascii devinfo hw_mac_addr)
 diff --git a/target/linux/qualcommax/ipq50xx/base-files/etc/hotplug.d/ieee80211/05-wifi-migrate b/target/linux/qualcommax/ipq50xx/base-files/etc/hotplug.d/ieee80211/05-wifi-migrate
-index d3460db582..628faf38fd 100644
+index f1a9467..8208799 100644
 --- a/target/linux/qualcommax/ipq50xx/base-files/etc/hotplug.d/ieee80211/05-wifi-migrate
 +++ b/target/linux/qualcommax/ipq50xx/base-files/etc/hotplug.d/ieee80211/05-wifi-migrate
-@@ -51,6 +51,7 @@ case "$(board_name)" in
+@@ -52,6 +52,7 @@ elecom,wrc-x3000gs2|\
  elecom,wrc-x3000gst2|\
  glinet,gl-b3000|\
  iodata,wn-dax3000gr|\
@@ -894,11 +866,11 @@ index d3460db582..628faf38fd 100644
  yuncore,ax830)
  	migrate_radio 'platform/soc@0/b00a040.wifi1' 'platform/soc@0/b00a040.wifi'
 diff --git a/target/linux/qualcommax/ipq50xx/base-files/lib/upgrade/platform.sh b/target/linux/qualcommax/ipq50xx/base-files/lib/upgrade/platform.sh
-index 9d921f73b6..854f793df9 100644
+index e78eb55..24a2aac 100644
 --- a/target/linux/qualcommax/ipq50xx/base-files/lib/upgrade/platform.sh
 +++ b/target/linux/qualcommax/ipq50xx/base-files/lib/upgrade/platform.sh
-@@ -121,6 +121,12 @@ platform_do_upgrade() {
- 	glinet,gl-b3000)
+@@ -210,6 +210,12 @@ platform_do_upgrade() {
+ 		remove_oem_ubi_volume wifi_fw
  		glinet_do_upgrade "$1"
  		;;
 +	jdcloud,re-cs-03)
@@ -907,53 +879,19 @@ index 9d921f73b6..854f793df9 100644
 +		CI_DATAPART="rootfs_data"
 +		emmc_do_upgrade "$1"
 +		;;
+ 	linksys,mr2000|\
  	linksys,mr5500|\
  	linksys,mx2000|\
- 	linksys,mx5500|\
-@@ -159,3 +165,12 @@ platform_do_upgrade() {
+@@ -334,3 +340,12 @@ platform_do_upgrade() {
  		;;
  	esac
  }
 +
-+platform_copy_config(){
++
++platform_copy_config() {
 +	case "$(board_name)" in
 +	jdcloud,re-cs-03)
 +		emmc_copy_config
 +		;;
 +	esac
-+	return 0;
 +}
-diff --git a/target/linux/qualcommax/patches-6.12/0821-remoteproc-qcom-wcss-populate-driver-data-for-IPQ5018.patch b/target/linux/qualcommax/patches-6.12/0821-remoteproc-qcom-wcss-populate-driver-data-for-IPQ5018.patch
-new file mode 100644
-index 0000000000..4dcee2cd3c
---- /dev/null
-+++ b/target/linux/qualcommax/patches-6.12/0821-remoteproc-qcom-wcss-populate-driver-data-for-IPQ5018.patch
-@@ -0,0 +1,28 @@
-+--- a/drivers/remoteproc/qcom_q6v5_wcss.c
-++++ b/drivers/remoteproc/qcom_q6v5_wcss.c
-+@@ -1218,10 +1218,25 @@ static const struct wcss_data wcss_qcs40
-+ 	.need_auto_boot = true,
-+ };
-+ 
-++static const struct wcss_data wcss_ipq5018_res_init = {
-++	.init_clock = ipq_init_clock,
-++	.q6_firmware_name = "IPQ5018/q6_fw.mdt",
-++	.m3_firmware_name = "IPQ5018/m3_fw.mdt",
-++	.crash_reason_smem = WCSS_CRASH_REASON,
-++	.aon_reset_required = true,
-++	.wcss_q6_reset_required = true,
-++	.bcr_reset_required = false,
-++	.ssr_name = "wcnss",
-++	.ops = &q6v5_wcss_ipq8074_ops,
-++	.requires_force_stop = true,
-++	.need_mem_protection = true,
-++};
-++
-+ static const struct of_device_id q6v5_wcss_of_match[] = {
-+ 	{ .compatible = "qcom,ipq8074-wcss-pil", .data = &wcss_ipq8074_res_init },
-+ 	{ .compatible = "qcom,ipq6018-wcss-pil", .data = &wcss_ipq6018_res_init },
-++	{ .compatible = "qcom,ipq5018-wcss-pil", .data = &wcss_ipq5018_res_init },
-+ 	{ .compatible = "qcom,qcs404-wcss-pil", .data = &wcss_qcs404_res_init },
-+ 	{ },
-+ };
-+ MODULE_DEVICE_TABLE(of, q6v5_wcss_of_match);
