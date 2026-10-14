@@ -5,9 +5,15 @@ permissions:
   actions: write
 
 on:
-  #push:
-    #branches:
-      #- main
+  push:
+    branches:
+      - main
+    paths:
+      - '.github/workflows/build.yaml'
+      - 're-cs-03.config'
+      - 'patches/**'
+      - 'files/**'
+      - 'luci-app-accesscontrol.zip'
   workflow_dispatch:
 
 env:
@@ -50,7 +56,7 @@ jobs:
   build:
     name: Build OpenWrt
     needs: check_commits
-    if: github.event_name == 'workflow_dispatch' || needs.check_commits.outputs.new_commits == 'true' || needs.check_commits.outputs.nss_packages_repo_new_commits == 'true'
+    if: github.event_name == 'workflow_dispatch' || github.event_name == 'push' || needs.check_commits.outputs.new_commits == 'true' || needs.check_commits.outputs.nss_packages_repo_new_commits == 'true'
     runs-on: ubuntu-24.04
     steps:
       - name: Install dependencies
@@ -68,14 +74,15 @@ jobs:
           
       - name: Add custom patches
         run: |
+          set -euo pipefail
           df -hT
-          if [ -d "builder_repo/patches" ] && [ "$(ls -A builder_repo/patches 2>/dev/null)" ]; then
-            for patch in builder_repo/patches/*.patch; do
-              echo "Applying patch $patch ..."
-              ls -al "$patch" && sha256sum "$patch"
-              [ -f "$patch" ] && git apply --verbose "$patch"
-            done
-          fi
+          shopt -s nullglob
+          for patch in builder_repo/patches/*.patch; do
+            echo "Applying patch $patch ..."
+            ls -al "$patch" && sha256sum "$patch"
+            git apply --verbose "$patch"
+            echo "OK: $patch"
+          done
             
       - name: Update and install feeds
         run: |
@@ -98,6 +105,49 @@ jobs:
           make defconfig -j$(nproc)
           mkdir -p ${{ env.CUSTOM_FILES_PATH }}
           [ -d "builder_repo/${{ env.CUSTOM_FILES_PATH }}" ] && mv builder_repo/${{ env.CUSTOM_FILES_PATH }}* ${{ env.CUSTOM_FILES_PATH }} || true
+
+      - name: Verify configuration and patches applied
+        run: |
+          set -euo pipefail
+          echo "== config symbols (fatal) =="
+          check() {
+            local sym="$1" want="$2"
+            local got
+            got="$(grep -m1 -E "^${sym}=" .config || true)"
+            printf '  %-58s %s\n' "$sym" "${got:-<MISSING>}"
+            if [ "$got" != "${sym}=${want}" ]; then
+              echo "  ^^^ expected ${sym}=${want}"
+              exit 1
+            fi
+          }
+          check CONFIG_TARGET_qualcommax_ipq50xx_DEVICE_jdcloud_re-cs-03 y
+          check CONFIG_ALL_KMODS y
+          check CONFIG_PACKAGE_luci-app-passwall2 n
+          check CONFIG_PACKAGE_kmod-nft-socket y
+          check CONFIG_PACKAGE_kmod-nft-tproxy y
+          check CONFIG_PACKAGE_kmod-nft-nat y
+          check CONFIG_PACKAGE_kmod-ipt-nat y
+          check CONFIG_PACKAGE_iptables-mod-tproxy y
+          check CONFIG_PACKAGE_ip6tables-mod-nat y
+
+          echo "== config symbols (soft) =="
+          for sym in CONFIG_PACKAGE_luci-app-qbittorrent CONFIG_PACKAGE_luci-app-passwall2_INCLUDE_SingBox; do
+            printf '  %-58s %s\n' "$sym" "$(grep -m1 -E "^${sym}=" .config || echo '<absent>')"
+          done
+
+          echo "== patch artifacts (fatal) =="
+          for f in \
+            target/linux/qualcommax/dts/ipq5018-re-cs-03.dts \
+            target/linux/qualcommax/ipq50xx/base-files/etc/board.d/02_network \
+            target/linux/qualcommax/ipq50xx/base-files/lib/upgrade/platform.sh \
+            target/linux/qualcommax/ipq50xx/base-files/etc/hotplug.d/firmware/11-ath11k-caldata \
+            package/firmware/ipq-wifi/files/board-jdcloud_re-cs-03.ipq5018 ; do
+            [ -f "$f" ] || { echo "  MISSING $f"; exit 1; }
+            echo "  ok $f"
+          done
+          grep -q 'jdcloud,re-cs-03' target/linux/qualcommax/ipq50xx/base-files/lib/upgrade/platform.sh
+          grep -q 'jdcloud,re-cs-03' target/linux/qualcommax/ipq50xx/base-files/etc/board.d/02_network
+          echo "VERIFY OK"
 
       - name: Use /mnt for more disk space
         if: always()
