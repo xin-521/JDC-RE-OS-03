@@ -152,6 +152,13 @@ jobs:
           done
           grep -q 'jdcloud,re-cs-03' target/linux/qualcommax/ipq50xx/base-files/lib/upgrade/platform.sh
           grep -q 'jdcloud,re-cs-03' target/linux/qualcommax/ipq50xx/base-files/etc/board.d/02_network
+
+          echo "== custom files / hostname (fatal) =="
+          grep -q "hostname='OpenWrt'" package/base-files/files/bin/config_generate
+          echo "  ok config_generate hostname=OpenWrt"
+          [ -f files/etc/shadow ] || { echo "  MISSING files/etc/shadow"; exit 1; }
+          grep -q '^root:\$6\$' files/etc/shadow || { echo "  files/etc/shadow has no root hash"; exit 1; }
+          echo "  ok files/etc/shadow (root password preset)"
           echo "VERIFY OK"
 
       - name: Use /mnt for more disk space
