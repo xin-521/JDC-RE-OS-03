@@ -143,14 +143,26 @@ jobs:
           check CONFIG_PACKAGE_iptables-mod-tproxy y
           check CONFIG_PACKAGE_ip6tables-mod-nat y
 
-          echo "== every requested luci-app must survive make defconfig (fatal) =="
-          # A seed line whose package the scanner cannot see is dropped silently by
-          # kconfig; assert it here instead of finding out after the firmware is built.
-          miss=0
+          echo "== every CONFIG_PACKAGE_*=y in the seed must survive make defconfig (fatal) =="
+          # A seed line whose package the scanner cannot see (missing feed, broken
+          # `include ../../luci.mk`, wrong PKG_NAME) is dropped silently by kconfig and
+          # only shows up hours later as a broken firmware. Assert it here instead, and
+          # say whether kconfig knew the symbol at all.
+          miss=0; n=0
           while read -r sym; do
-            if grep -qE "^${sym}=[ym]$" .config; then printf '  %-58s ok\n' "$sym"; else echo "  MISSING in .config: $sym"; miss=1; fi
-          done < <(grep -oE '^CONFIG_PACKAGE_luci-app-[A-Za-z0-9._+-]+=y' builder_repo/${{ env.CONFIG_FILE }} | sed 's/=y$//' | sort -u)
-          [ "$miss" = 0 ] || { echo "  ^^^ requested luci-app package missing from .config"; exit 1; }
+            n=$((n + 1))
+            if grep -qE "^${sym}=[ym]$" .config; then continue; fi
+            k="${sym#CONFIG_}"
+            if grep -qE "^config ${k}( |$)" tmp/.config-package.in 2>/dev/null; then
+              why="kconfig knows it but did not select it (missing dep/feed)"
+            else
+              why="NOT in tmp/.config-package.in (scanner never saw the package)"
+            fi
+            echo "  MISSING in .config: $sym  ->  $why"
+            miss=1
+          done < <(grep -oE '^CONFIG_PACKAGE_[A-Za-z0-9._+-]+=y' builder_repo/${{ env.CONFIG_FILE }} | sed 's/=y$//' | sort -u)
+          echo "  checked $n seed CONFIG_PACKAGE_*=y symbols"
+          [ "$miss" = 0 ] || { echo "  ^^^ seed package(s) dropped by kconfig"; exit 1; }
 
           echo "== config symbols (soft) =="
           for sym in CONFIG_PACKAGE_luci-app-qbittorrent CONFIG_PACKAGE_luci-app-passwall2_INCLUDE_SingBox; do
