@@ -142,7 +142,11 @@ jobs:
           check CONFIG_PACKAGE_kmod-ipt-nat y
           check CONFIG_PACKAGE_iptables-mod-tproxy y
           check CONFIG_PACKAGE_ip6tables-mod-nat y
+          check CONFIG_BUSYBOX_CUSTOM y
           check CONFIG_BUSYBOX_CONFIG_WATCH y
+          # BUSYBOX_CUSTOM switches the applet source DEFAULT_* -> CONFIG_*; assert a few
+          # core applets so a stripped busybox can never reach the image unnoticed.
+          for a in LS CAT MOUNT PS TOP; do check "CONFIG_BUSYBOX_CONFIG_${a}" y; done
 
           echo "== every CONFIG_PACKAGE_*=y in the seed must survive make defconfig (fatal) =="
           # A seed line whose package the scanner cannot see (missing feed, broken
