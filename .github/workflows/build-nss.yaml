@@ -190,7 +190,7 @@ jobs:
           printf '  tmp/.packageinfo ipq-wifi hits: %s\n' "$(grep -c 'ipq-wifi' tmp/.packageinfo 2>/dev/null || echo 0)"
           grep -n 'jdcloud_re-cs' tmp/.config-package.in 2>/dev/null | head -5 || echo "  no jdcloud_re-cs in tmp/.config-package.in"
           grep -n 'jdcloud_re-cs' tmp/.packageinfo 2>/dev/null | head -5 || echo "  no jdcloud_re-cs in tmp/.packageinfo"
-          grep -qE '^[[:space:]]*config PACKAGE_ipq-wifi-jdcloud_re-cs-03([[:space:]]|\$)' tmp/.config-package.in \
+          grep -qE '^[[:space:]]*config PACKAGE_ipq-wifi-jdcloud_re-cs-03([[:space:]]|$)' tmp/.config-package.in \
             || { echo "  ipq-wifi-jdcloud_re-cs-03 not registered in tmp/.config-package.in"; exit 1; }
           echo "  ok ipq-wifi-jdcloud_re-cs-03 registered"
           grep -q 'caldata_extract_mmc()' package/base-files/files/lib/functions/caldata.sh \
