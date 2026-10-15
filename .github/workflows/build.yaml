@@ -142,6 +142,7 @@ jobs:
           check CONFIG_PACKAGE_kmod-ipt-nat y
           check CONFIG_PACKAGE_iptables-mod-tproxy y
           check CONFIG_PACKAGE_ip6tables-mod-nat y
+          check CONFIG_BUSYBOX_CONFIG_WATCH y
 
           echo "== every CONFIG_PACKAGE_*=y in the seed must survive make defconfig (fatal) =="
           # A seed line whose package the scanner cannot see (missing feed, broken
@@ -156,7 +157,8 @@ jobs:
             if grep -qE "^config ${k}( |$)" tmp/.config-package.in 2>/dev/null; then
               why="kconfig knows it but did not select it (missing dep/feed)"
             else
-              why="NOT in tmp/.config-package.in (scanner never saw the package)"
+              nbase=$(grep -cE "^config ${k%-[^-]*}( |$)" tmp/.config-package.in 2>/dev/null || true)
+              why="NOT in tmp/.config-package.in (scanner never saw the package); sibling '${k%-[^-]*}' entries: ${nbase}"
             fi
             echo "  MISSING in .config: $sym  ->  $why"
             miss=1
