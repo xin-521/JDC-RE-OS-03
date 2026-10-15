@@ -23,6 +23,7 @@ on:
     paths:
       - '.github/workflows/build-nss.yaml'
       - 're-cs-03-nss.config'
+      - 'ci/**'
       - 'patches/**'
       - 'files/**'
       - 'luci-app-accesscontrol.zip'
@@ -65,25 +66,35 @@ jobs:
 
       - name: Apply custom patches
         run: |
-          # Every patch is tried, the outcome is reported, and the next step decides
-          # whether what landed is enough to build.
+          # Applied per file on purpose: `git apply` is atomic, so a single drifted file
+          # would block the whole patch -- including the two binary board files that only
+          # git can apply (GNU patch cannot). Rejected files are ported by ci/nss-port.py.
+          python3 - <<'PY'
+          import io, os, re
+          p = io.open('builder_repo/patches/re-cs-03-mainline.patch', encoding='utf-8', newline='').read()
+          parts = [c for c in re.split(r'(?m)^(?=diff --git )', p) if c.strip()]
+          os.makedirs('/tmp/patchparts', exist_ok=True)
+          for i, c in enumerate(parts):
+              io.open('/tmp/patchparts/%02d.patch' % i, 'w', encoding='utf-8', newline='').write(c)
+          print("%d patch parts" % len(parts))
+          PY
           shopt -s nullglob
-          failed=""
-          for patch in builder_repo/patches/*.patch; do
-            echo "::group::patch $patch"
-            ls -al "$patch" && sha256sum "$patch"
-            if git apply --verbose "$patch"; then
-              echo "OK (git apply, exact): $patch"
-            elif patch -p1 -F3 --forward --no-backup-if-mismatch < "$patch"; then
-              echo "OK (patch -p1 -F3, fuzzy): $patch"
+          rejected=""
+          for part in /tmp/patchparts/*.patch; do
+            f="$(sed -n 's|^+++ b/||p' "$part" | head -1)"
+            if git apply --verbose "$part"; then
+              echo "applied: $f"
             else
-              echo "::warning::patch did not apply cleanly: $patch"
-              failed="$failed $(basename "$patch")"
+              echo "::warning::hunk rejected on this tree (will be ported): $f"
+              rejected="$rejected $f"
             fi
-            echo "::endgroup::"
           done
-          echo "patches with rejects:${failed:- none}" | tee -a "$GITHUB_STEP_SUMMARY"
-          [ -z "$failed" ] || echo "::warning::device support may be incomplete -- see the rejects above"
+          echo "rejected:${rejected:- none}" | tee -a "$GITHUB_STEP_SUMMARY"
+
+      - name: Port the device support onto this tree
+        run: |
+          set -euo pipefail
+          python3 builder_repo/ci/nss-port.py
 
       - name: Ensure jdcloud re-cs-03 device definition exists
         run: |
@@ -156,13 +167,29 @@ jobs:
           echo "  ok Device/jdcloud_re-cs-03 (ipq50xx.mk)"
           for f in \
             target/linux/qualcommax/dts/ipq5018-re-cs-03.dts \
-            package/firmware/ipq-wifi/files/board-jdcloud_re-cs-03.ipq5018 ; do
+            package/firmware/ipq-wifi/files/board-jdcloud_re-cs-03.ipq5018 \
+            package/firmware/ipq-wifi/files/board-jdcloud_re-cs-03.qcn6122 ; do
             [ -f "$f" ] || { echo "  MISSING $f"; exit 1; }
             echo "  ok $f"
           done
           grep -q "^CONFIG_TARGET_qualcommax_ipq50xx_DEVICE_jdcloud_re-cs-03=y" .config \
             || { echo "  target device not selected in .config"; exit 1; }
           echo "  ok target device selected"
+          for f in \
+            target/linux/qualcommax/ipq50xx/base-files/etc/board.d/02_network \
+            target/linux/qualcommax/ipq50xx/base-files/lib/upgrade/platform.sh \
+            target/linux/qualcommax/ipq50xx/base-files/etc/hotplug.d/firmware/11-ath11k-caldata \
+            package/boot/uboot-tools/uboot-envtools/files/qualcommax_ipq50xx ; do
+            grep -q 'jdcloud,re-cs-03' "$f" || { echo "  MISSING device entry in $f"; exit 1; }
+            echo "  ok device entry in $(basename "$f")"
+          done
+          # the device's DEVICE_PACKAGES name this package, so a missing def breaks the image
+          grep -qE '^config PACKAGE_ipq-wifi-jdcloud_re-cs-03( |$)' tmp/.config-package.in \
+            || { echo "  ipq-wifi-jdcloud_re-cs-03 not registered in tmp/.config-package.in"; exit 1; }
+          echo "  ok ipq-wifi-jdcloud_re-cs-03 registered"
+          grep -q 'caldata_extract_mmc()' package/base-files/files/lib/functions/caldata.sh \
+            || { echo "  caldata_extract_mmc() missing from caldata.sh"; exit 1; }
+          echo "  ok caldata_extract_mmc() available"
 
           echo "== NSS (fatal: the whole point of this workflow) =="
           nsscheck() {
