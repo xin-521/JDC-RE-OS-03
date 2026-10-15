@@ -4,6 +4,12 @@ permissions:
   contents: write
   actions: write
 
+# A run takes ~3h, so a new push must retire the running one instead of leaving a
+# stale build to publish a release alongside the newer one.
+concurrency:
+  group: build-${{ github.ref }}
+  cancel-in-progress: true
+
 on:
   push:
     branches:

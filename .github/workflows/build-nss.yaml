@@ -16,6 +16,12 @@ name: Build OpenWrt NSS (kernel 6.12 fork, artifacts only)
 permissions:
   contents: read
 
+# A run takes ~3h, so a new push must retire the running one instead of leaving two
+# builds to upload artifacts of the same name.
+concurrency:
+  group: build-nss-${{ github.ref }}
+  cancel-in-progress: true
+
 on:
   push:
     branches:
