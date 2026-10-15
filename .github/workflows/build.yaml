@@ -142,6 +142,9 @@ jobs:
           check CONFIG_PACKAGE_kmod-ipt-nat y
           check CONFIG_PACKAGE_iptables-mod-tproxy y
           check CONFIG_PACKAGE_ip6tables-mod-nat y
+          # luci-app-qbittorrent depends on this; a kconfig recursive dependency in
+          # small-package otherwise unsets it and apk install fails at image build.
+          check CONFIG_PACKAGE_qbittorrent y
 
           echo "== every requested luci-app must survive make defconfig (fatal) =="
           # A seed line whose package the scanner cannot see is dropped silently by
