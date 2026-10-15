@@ -159,6 +159,14 @@ jobs:
           [ -f files/etc/shadow ] || { echo "  MISSING files/etc/shadow"; exit 1; }
           grep -q '^root:\$6\$' files/etc/shadow || { echo "  files/etc/shadow has no root hash"; exit 1; }
           echo "  ok files/etc/shadow (root password preset)"
+
+          echo "== IPv6 enabled (fatal) =="
+          grep -q "set network.lan.ipv6='1'" files/etc/uci-defaults/999-QOL_config
+          grep -q "set network.wan.ipv6='1'" files/etc/uci-defaults/999-QOL_config
+          grep -q "set network.@device\[0\].ipv6='1'" files/etc/uci-defaults/999-QOL_config
+          grep -q "set dhcp.lan.ra='server'" files/etc/uci-defaults/999-QOL_config
+          grep -q "set dhcp.lan.dhcpv6='server'" files/etc/uci-defaults/999-QOL_config
+          echo "  ok IPv6 enabled (lan/wan/br-lan, LAN RA+DHCPv6 server)"
           echo "VERIFY OK"
 
       - name: Use /mnt for more disk space

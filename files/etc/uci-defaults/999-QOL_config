@@ -41,12 +41,17 @@ set uhttpd.main.redirect_https='1'
 # BanIP settings
 add_list banip.global.ban_feed='doh'
 
-# Disable IPv6
-set network.lan.ipv6='0'
-set network.wan.ipv6='0'
-network.@device[0].ipv6='0'
-set dhcp.lan.dhcpv6=disabled
--q delete dhcp.lan.dhcpv6
--q delete dhcp.lan.ra
-set network.lan.delegate='0'
+# Enable IPv6
+set network.lan.ipv6='1'
+set network.wan.ipv6='1'
+set network.@device[0].ipv6='1'
+set network.lan.delegate='1'
+set network.wan.delegate='1'
+set network.wan6=interface
+set network.wan6.device='@wan'
+set network.wan6.proto='dhcpv6'
+set dhcp.lan.dhcpv6='server'
+set dhcp.lan.ra='server'
+set dhcp.lan.ra_slaac='1'
+set dhcp.lan.ra_default='1'
 EOI
