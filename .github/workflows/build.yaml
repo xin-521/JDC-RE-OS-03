@@ -87,8 +87,11 @@ jobs:
       - name: Update and install feeds
         run: |
           df -hT
+          # third-party feed supplying luci-app-{aliddns,autoreboot,filetransfer,socat,vlmcsd,qbittorrent}
+          echo 'src-git small https://github.com/kenzok8/small-package' >> feeds.conf.default
           #echo 'src-git custom https://github.com/kiddin9/kwrt-packages' >> feeds.conf.default
-          ./scripts/feeds update -a && ./scripts/feeds install -a -p luci && ./scripts/feeds install -a -p packages
+          ./scripts/feeds update -a
+          ./scripts/feeds install -a -p luci && ./scripts/feeds install -a -p packages && ./scripts/feeds install -a -p small
           git clone https://github.com/Openwrt-Passwall/openwrt-passwall2.git package/feeds/luci/luci-app-passwall2
           git clone https://github.com/Openwrt-Passwall/openwrt-passwall-packages.git package/utils/passwall2
           git clone https://github.com/jerrykuku/luci-theme-argon.git package/feeds/luci/luci-theme-argon
@@ -96,12 +99,18 @@ jobs:
           #git clone https://github.com/dgyangxf/luci-app-vlmcsd.git package/feeds/luci/luci-app-vlmcsd
           #git clone https://github.com/im-0/openwrt-package.vlmcsd.git package/utils/vlmcsd
           #git clone https://github.com/sbwml/openwrt-qBittorrent package/feeds/qBittorrent
-          unzip builder_repo/luci-app-accesscontrol.zip -d package/feeds/luci/applications
+          # accesscontrol: place it where the package scanner collects it, and rewrite the
+          # relative `include ../../luci.mk` -> absolute, because package/feeds/luci/ is a
+          # plain dir of per-package symlinks with no luci.mk (a failing include makes the
+          # scanner skip the package and silently drop CONFIG_PACKAGE_... from .config).
+          unzip builder_repo/luci-app-accesscontrol.zip -d package/feeds/luci
+          sed -i 's#include ../../luci.mk#include $(TOPDIR)/feeds/luci/luci.mk#' package/feeds/luci/luci-app-accesscontrol-main/Makefile
+          grep -q 'luci.mk' package/feeds/luci/luci-app-accesscontrol-main/Makefile
 
       - name: Setup configuration and custom files
         run: |
           df -hT
-          mv builder_repo/${{ env.CONFIG_FILE }} .config
+          cp builder_repo/${{ env.CONFIG_FILE }} .config
           make defconfig -j$(nproc)
           mkdir -p ${{ env.CUSTOM_FILES_PATH }}
           [ -d "builder_repo/${{ env.CUSTOM_FILES_PATH }}" ] && mv builder_repo/${{ env.CUSTOM_FILES_PATH }}* ${{ env.CUSTOM_FILES_PATH }} || true
@@ -133,6 +142,15 @@ jobs:
           check CONFIG_PACKAGE_kmod-ipt-nat y
           check CONFIG_PACKAGE_iptables-mod-tproxy y
           check CONFIG_PACKAGE_ip6tables-mod-nat y
+
+          echo "== every requested luci-app must survive make defconfig (fatal) =="
+          # A seed line whose package the scanner cannot see is dropped silently by
+          # kconfig; assert it here instead of finding out after the firmware is built.
+          miss=0
+          while read -r sym; do
+            if grep -qE "^${sym}=[ym]$" .config; then printf '  %-58s ok\n' "$sym"; else echo "  MISSING in .config: $sym"; miss=1; fi
+          done < <(grep -oE '^CONFIG_PACKAGE_luci-app-[A-Za-z0-9._+-]+=y' builder_repo/${{ env.CONFIG_FILE }} | sed 's/=y$//' | sort -u)
+          [ "$miss" = 0 ] || { echo "  ^^^ requested luci-app package missing from .config"; exit 1; }
 
           echo "== config symbols (soft) =="
           for sym in CONFIG_PACKAGE_luci-app-qbittorrent CONFIG_PACKAGE_luci-app-passwall2_INCLUDE_SingBox; do
