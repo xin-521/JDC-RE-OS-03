@@ -216,7 +216,7 @@ jobs:
 
           echo "== patch artifacts (fatal) =="
           for f in \
-            target/linux/qualcommax/dts/ipq5018-re-cs-03.dts \
+            target/linux/qualcommax/files/arch/arm64/boot/dts/qcom/ipq5018-re-cs-03.dts \
             target/linux/qualcommax/ipq50xx/base-files/etc/board.d/02_network \
             target/linux/qualcommax/ipq50xx/base-files/lib/upgrade/platform.sh \
             target/linux/qualcommax/ipq50xx/base-files/etc/hotplug.d/firmware/11-ath11k-caldata \
@@ -226,6 +226,27 @@ jobs:
           done
           grep -q 'jdcloud,re-cs-03' target/linux/qualcommax/ipq50xx/base-files/lib/upgrade/platform.sh
           grep -q 'jdcloud,re-cs-03' target/linux/qualcommax/ipq50xx/base-files/etc/board.d/02_network
+
+          echo "== ipq50xx device trees (fatal: the subtarget builds every board's DTB) =="
+          # DEVICE_DTS_DIR is $(DTS_DIR)/qcom here, so a device DTS only ever comes
+          # from files/arch/arm64/boot/dts/qcom -- never from target/linux/.../dts.
+          DTS=target/linux/qualcommax/files/arch/arm64/boot/dts/qcom/ipq5018-re-cs-03.dts
+          # the vendor/QSDK names (&gmac0/&gmac1/&uniphy0) do not exist in this tree;
+          # the ESS data-path ports do, and every other ipq50xx board is wired that way
+          grep -q 'ethernet0 = &dp1;' "$DTS" || { echo "  $DTS does not use the ESS ports"; exit 1; }
+          grep -q '&switch {' "$DTS" || { echo "  $DTS does not enable the ESS switch"; exit 1; }
+          grep -q 'ethernet = <&dp2>;' "$DTS" || { echo "  $DTS CPU port not on dp2"; exit 1; }
+          grep -q 'MAC_MODE_SGMII_CHANNEL0' "$DTS" || { echo "  $DTS lacks the SGMII mac mode"; exit 1; }
+          # the fork's ipq5018-nss.dtsi referenced &wifi0, which no board defines (the
+          # SoC radio is labelled &wifi), and &wifi1/&wifi2 from a file that three
+          # boards (mr5500/mx5500/spnmx56, via ipq5018-mx-base.dtsi) include without
+          # ipq5018-qcn6122.dtsi -- so those two hunks moved to where the labels live.
+          NSS=target/linux/qualcommax/files/arch/arm64/boot/dts/qcom/ipq5018-nss.dtsi
+          grep -q '^&wifi {' "$NSS" || { echo "  $NSS: &wifi0 was not renamed to &wifi"; exit 1; }
+          ! grep -qE '&wifi[012]' "$NSS" || { echo "  $NSS still references a wifi0/1/2 label"; exit 1; }
+          [ "$(grep -c 'nss-radio-priority' target/linux/qualcommax/files/arch/arm64/boot/dts/qcom/ipq5018-qcn6122.dtsi)" = 2 ] \
+            || { echo "  ipq5018-qcn6122.dtsi: the two radio priorities are missing"; exit 1; }
+          echo "  ok ipq50xx DTS: ESS ports, nss.dtsi labels and qcn6122 priorities"
 
           echo "== custom files / hostname (fatal) =="
           grep -q "hostname='OpenWrt'" package/base-files/files/bin/config_generate

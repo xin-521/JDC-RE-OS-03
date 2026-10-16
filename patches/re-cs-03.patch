@@ -417,12 +417,12 @@ x0cAiLPzIC%Wk4BF29yD1Kp9X5lmTTx8Bhk40cAiLPzIC%Wk4BF2Ih!?{|^?yL+bzl
 literal 0
 HcmV?d00001
 
-diff --git a/target/linux/qualcommax/dts/ipq5018-re-cs-03.dts b/target/linux/qualcommax/dts/ipq5018-re-cs-03.dts
+diff --git a/target/linux/qualcommax/files/arch/arm64/boot/dts/qcom/ipq5018-re-cs-03.dts b/target/linux/qualcommax/files/arch/arm64/boot/dts/qcom/ipq5018-re-cs-03.dts
 new file mode 100644
-index 0000000..fb9eac6
+index 0000000..bfb1f2036c89b2f1ea154199a447de1ca1e9623a
 --- /dev/null
-+++ b/target/linux/qualcommax/dts/ipq5018-re-cs-03.dts
-@@ -0,0 +1,363 @@
++++ b/target/linux/qualcommax/files/arch/arm64/boot/dts/qcom/ipq5018-re-cs-03.dts
+@@ -0,0 +1,378 @@
 +// SPDX-License-Identifier: GPL-2.0-or-later OR MIT
 +
 +/dts-v1/;
@@ -446,9 +446,9 @@ index 0000000..fb9eac6
 +		led-upgrade = &led_system_red;
 +		serial0 = &blsp1_uart1;
 +		sdhc1 = &sdhc_1;
-+		ethernet0 = &gmac0;
-+		ethernet1 = &gmac1;
-+		label-mac-device = &gmac1;
++		ethernet0 = &dp1;
++		ethernet1 = &dp2;
++		label-mac-device = &dp2;
 +	};
 +
 +	chosen {
@@ -639,23 +639,38 @@ index 0000000..fb9eac6
 + * ===============================================================
 + */
 +
-+/* SGMII reference clock for the QCA8337 SerDes */
-+&uniphy0 {
++/* ESS: MAC0 -> internal GE PHY, MAC1 ---SGMII---> QCA8337 SerDes */
++&switch {
 +	status = "okay";
 +
-+	assigned-clocks = <&uniphy0 UNIPHY_CLK_REF>;
-+	assigned-clock-rates = <UNIPHY_REFCLK_25MHZ>;
++	switch_mac_mode = <MAC_MODE_SGMII_CHANNEL0>;
++
++	qcom,port_phyinfo {
++		// MAC0 -> internal GE PHY (QCA8337 Phy4 -> WAN)
++		port@0 {
++			port_id = <1>;
++			mdiobus = <&mdio0>;
++			phy_address = <7>;
++		};
++
++		// MAC1 ---SGMII---> QCA8337 SerDes
++		port@1 {
++			port_id = <2>;
++			forced-speed = <1000>;
++			forced-duplex = <1>;
++		};
++	};
 +};
 +
 +// MAC0 -> GE Phy -> QCA8337 Phy4
-+&gmac0 {
++&dp1 {
 +	status = "okay";
 +
 +	label = "wan";
 +};
 +
 +// MAC1 ---SGMII---> QCA8337 SerDes
-+&gmac1 {
++&dp2 {
 +	status = "okay";
 +
 +	phy-mode = "sgmii";
@@ -739,7 +754,7 @@ index 0000000..fb9eac6
 +				reg = <6>;
 +				label = "cpu";
 +				phy-mode = "sgmii";
-+				ethernet = <&gmac1>;
++				ethernet = <&dp2>;
 +				qca,sgmii-enable-pll;
 +
 +				fixed-link {
@@ -971,3 +986,46 @@ index 0000000..0c33f8d
 ++#define __CUSTOM_GPIO_H__
 + 
 + #include <drv_conf.h>
+diff --git a/target/linux/qualcommax/files/arch/arm64/boot/dts/qcom/ipq5018-nss.dtsi b/target/linux/qualcommax/files/arch/arm64/boot/dts/qcom/ipq5018-nss.dtsi
+--- a/target/linux/qualcommax/files/arch/arm64/boot/dts/qcom/ipq5018-nss.dtsi
++++ b/target/linux/qualcommax/files/arch/arm64/boot/dts/qcom/ipq5018-nss.dtsi
+@@ -115,17 +115,7 @@
+ 	};
+ };
+ 
+-&wifi0 {
++&wifi {
+ 	// IPQ5018
+ 	nss-radio-priority = <0>;
+ };
+-
+-&wifi1 {
+-	// QCN6102 5G
+-	nss-radio-priority = <1>;
+-};
+-
+-&wifi2 {
+-	// QCN6122 5G/6G
+-	nss-radio-priority = <1>;
+-};
+diff --git a/target/linux/qualcommax/files/arch/arm64/boot/dts/qcom/ipq5018-qcn6122.dtsi b/target/linux/qualcommax/files/arch/arm64/boot/dts/qcom/ipq5018-qcn6122.dtsi
+--- a/target/linux/qualcommax/files/arch/arm64/boot/dts/qcom/ipq5018-qcn6122.dtsi
++++ b/target/linux/qualcommax/files/arch/arm64/boot/dts/qcom/ipq5018-qcn6122.dtsi
+@@ -110,6 +110,8 @@
+ 			     <GIC_SPI 426 IRQ_TYPE_EDGE_RISING>,
+ 			     <GIC_SPI 427 IRQ_TYPE_EDGE_RISING>,
+ 			     <GIC_SPI 428 IRQ_TYPE_EDGE_RISING>;
++		// QCN6102 5G
++		nss-radio-priority = <1>;
+ 		status = "disabled";
+ 	};
+ 
+@@ -130,6 +132,8 @@
+ 			     <GIC_SPI 458 IRQ_TYPE_EDGE_RISING>,
+ 			     <GIC_SPI 459 IRQ_TYPE_EDGE_RISING>,
+ 			     <GIC_SPI 460 IRQ_TYPE_EDGE_RISING>;
++		// QCN6122 5G/6G
++		nss-radio-priority = <1>;
+ 		status = "disabled";
+ 	};
+ };
