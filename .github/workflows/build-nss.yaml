@@ -150,6 +150,10 @@ jobs:
           git clone https://github.com/Openwrt-Passwall/openwrt-passwall-packages.git package/utils/passwall2
           git clone https://github.com/jerrykuku/luci-theme-argon.git package/feeds/luci/luci-theme-argon
           git clone https://github.com/jerrykuku/luci-app-argon-config.git package/feeds/luci/luci-app-argon-config
+          # 6.12 enables -Wmissing-prototypes/-Wmissing-declarations globally and this
+          # tree promotes warnings to errors; the QSDK HAL files the fork never built
+          # (qca-nss-crypto's ipq50xx one) do not silence them themselves.
+          python3 builder_repo/ci/nss-warnings.py
 
       - name: Setup configuration and custom files
         run: |
@@ -215,6 +219,14 @@ jobs:
           else
             echo "  neither kmod-qca-nss-dp nor kmod-qca-ssdk selected"; exit 1
           fi
+
+          echo "== kernel warning flags (fatal: the 6.12 tree promotes warnings) =="
+          grep -qE '^CONFIG_KERNEL_CFLAGS=.*Wno-missing-prototypes' .config \
+            || { echo "  CONFIG_KERNEL_CFLAGS lacks -Wno-missing-prototypes"; exit 1; }
+          echo "  ok CONFIG_KERNEL_CFLAGS silences missing-prototypes"
+          grep -q -- '-Wno-missing-prototypes' feeds/nss_packages/qca-nss-crypto/Makefile \
+            || { echo "  qca-nss-crypto Makefile was not patched"; exit 1; }
+          echo "  ok qca-nss-crypto EXTRA_CFLAGS patched"
 
           echo "== NSS (soft: nice to have, not fatal) =="
           for sym in CONFIG_ATH11K_NSS_SUPPORT \
@@ -284,6 +296,7 @@ jobs:
           CMAKE_POLICY_VERSION_MINIMUM: 3.5
         run: |
           df -hT
+          python3 builder_repo/ci/nss-warnings.py  # idempotent, in case feeds update reverted it
           make -j$(nproc) || make -j1 V=s  # Retry single-threaded on failure
           ls -lh bin/targets/qualcommax/ipq50xx/
 
