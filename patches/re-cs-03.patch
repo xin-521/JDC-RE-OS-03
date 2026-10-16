@@ -893,3 +893,24 @@ index c6e8d0f..fc72aac 100644
 +		;;
 +	esac
 +}
+diff --git a/tools/gnulib/patches/210-obstack-empty-SMALL_PTRDIFF_T.patch b/tools/gnulib/patches/210-obstack-empty-SMALL_PTRDIFF_T.patch
+new file mode 100644
+--- /dev/null
++++ b/tools/gnulib/patches/210-obstack-empty-SMALL_PTRDIFF_T.patch
+@@ -0,0 +1,16 @@
++--- a/lib/obstack.in.h
+++++ b/lib/obstack.in.h
++@@ -139,7 +139,12 @@
++    If ptrdiff_t is narrower than a pointer (e.g., the AS/400), play it
++    safe and compute the alignment relative to B.  Otherwise, use the
++    faster strategy of computing the alignment through uintptr_t.  */
++-#if @SMALL_PTRDIFF_T@
+++/* The value comes from configure, but gl_FUNC_OBSTACK only sets it when it
+++   decides that obstack itself must be replaced.  On glibc hosts nothing
+++   sets it, so the substitution is empty and this line degenerates into a
+++   bare "#if", which gcc rejects with "error: #if with no expression".
+++   Appending 0 keeps the meaning: empty = not small = the uintptr_t branch.  */
+++#if @SMALL_PTRDIFF_T@0
++ # define __PTR_ALIGN(B, P, A) \
++    ((B) + (((P) - (B) + (A)) & ~(A)))
++ #else

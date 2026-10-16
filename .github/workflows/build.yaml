@@ -283,6 +283,17 @@ jobs:
           grep -q -- '-Wno-missing-prototypes' feeds/nss_packages/qca-nss-crypto/Makefile \
             || { echo "  qca-nss-crypto Makefile was not patched"; exit 1; }
           echo "  ok qca-nss-crypto EXTRA_CFLAGS patched"
+
+          echo "== host tools (fatal: gnulib feeds elfutils' libgnu) =="
+          # gnulib's lib/obstack.in.h uses "#if @SMALL_PTRDIFF_T@", and gl_FUNC_OBSTACK
+          # only sets that substitution when obstack itself must be replaced, so on
+          # glibc hosts it is empty -> bare "#if" -> "error: #if with no expression"
+          # while compiling tools/elfutils' libgnu/obstack.c, which aborts the build
+          # after ~20 minutes. The series appends a 0 to the token.
+          GL=tools/gnulib/patches/210-obstack-empty-SMALL_PTRDIFF_T.patch
+          [ -f "$GL" ] || { echo "  $GL missing (tools/elfutils will die)"; exit 1; }
+          grep -q 'SMALL_PTRDIFF_T@0' "$GL" || { echo "  $GL has unexpected content"; exit 1; }
+          echo "  ok gnulib obstack substitution guarded"
           echo "VERIFY OK"
 
       - name: Use /mnt for more disk space
