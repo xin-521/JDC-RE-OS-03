@@ -1,4 +1,4 @@
-name: Build OpenWrt for specific target and release
+name: Build OpenWrt stable 25.12.5 (qualcommax/ipq50xx, jdcloud re-cs-03)
 
 permissions:
   contents: write
@@ -17,16 +17,18 @@ on:
     paths:
       - '.github/workflows/build.yaml'
       - 're-cs-03.config'
-      - 'patches/**'
+      # patches/ targets upstream master (the NSS fork workflow); this workflow
+      # builds the stable release, whose files drifted, so it has its own series.
+      - 'patches-stable/**'
       - 'files/**'
   workflow_dispatch:
 
 env:
   REMOTE_REPOSITORY: openwrt/openwrt
-  REMOTE_BRANCH: main
+  REMOTE_BRANCH: v25.12.5
   CONFIG_FILE: re-cs-03.config
   CUSTOM_FILES_PATH: files/
-  RELEASE_PREFIX: main
+  RELEASE_PREFIX: stable
   ENV: main
 
 jobs:
@@ -74,7 +76,9 @@ jobs:
           set -euo pipefail
           df -hT
           shopt -s nullglob
-          for patch in builder_repo/patches/*.patch; do
+          # patches-stable/ is the series regenerated against the v25.12.5 tree;
+          # builder_repo/patches/ no longer applies here (device-list drift).
+          for patch in builder_repo/patches-stable/*.patch; do
             echo "Applying patch $patch ..."
             ls -al "$patch" && sha256sum "$patch"
             git apply --verbose "$patch"
@@ -206,8 +210,9 @@ jobs:
         uses: actions/cache@v4
         if: always()
         with:
-          key: openwrt-build-${{ needs.check_commits.outputs.latest_commit_sha }}
+          key: openwrt-build-${{ env.REMOTE_BRANCH }}-${{ needs.check_commits.outputs.latest_commit_sha }}
           restore-keys: |
+            openwrt-build-${{ env.REMOTE_BRANCH }}-
             openwrt-build
           path: |
             build_dir
@@ -272,10 +277,11 @@ jobs:
             ## 📦 OpenWrt Automated Build Release
 
             **Build Date:** ${{ env.RELEASE_DATE }}
+            **Base:** OpenWrt ${{ env.REMOTE_BRANCH }} stable
 
             ### 🔄 Main Repository
             **Repository:** [${{ env.REMOTE_REPOSITORY }}](https://github.com/${{ env.REMOTE_REPOSITORY }})
-            **Branch:** `${{ env.REMOTE_BRANCH }}`
+            **Upstream ref:** `${{ env.REMOTE_BRANCH }}` (OpenWrt stable, not snapshot)
             **Commit:** `${{ needs.check_commits.outputs.latest_commit_sha }}`
 
             ### 📝 Build Information
