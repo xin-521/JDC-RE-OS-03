@@ -282,7 +282,14 @@ jobs:
           echo "  ok CONFIG_KERNEL_CFLAGS silences missing-prototypes"
           grep -q -- '-Wno-missing-prototypes' feeds/nss_packages/qca-nss-crypto/Makefile \
             || { echo "  qca-nss-crypto Makefile was not patched"; exit 1; }
-          echo "  ok qca-nss-crypto EXTRA_CFLAGS patched"
+          # gcc 14 makes an implicit declaration a hard error, and the 6.12 HAL
+          # calls of_find_compatible_node() without <linux/of.h>; -include also
+          # fixes the int-returning-assumption pointer truncation on arm64.
+          grep -q -- '-Wno-implicit-function-declaration' feeds/nss_packages/qca-nss-crypto/Makefile \
+            || { echo "  qca-nss-crypto lacks -Wno-implicit-function-declaration"; exit 1; }
+          grep -q -- '-include linux/of.h' feeds/nss_packages/qca-nss-crypto/Makefile \
+            || { echo "  qca-nss-crypto does not force-include <linux/of.h>"; exit 1; }
+          echo "  ok qca-nss-crypto EXTRA_CFLAGS patched (warning flags + of.h)"
 
           echo "== host tools (fatal: gnulib feeds elfutils' libgnu) =="
           # gnulib's lib/obstack.in.h uses "#if @SMALL_PTRDIFF_T@", and gl_FUNC_OBSTACK
