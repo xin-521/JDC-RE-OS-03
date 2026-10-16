@@ -914,3 +914,60 @@ new file mode 100644
 + # define __PTR_ALIGN(B, P, A) \
 +    ((B) + (((P) - (B) + (A)) & ~(A)))
 + #else
+diff --git a/package/kernel/rtl8812au-ct/patches/111-fix-sreset-header-guards-and-gcc14-diagnostics.patch b/package/kernel/rtl8812au-ct/patches/111-fix-sreset-header-guards-and-gcc14-diagnostics.patch
+new file mode 100644
+index 0000000..0c33f8d
+--- /dev/null
++++ b/package/kernel/rtl8812au-ct/patches/111-fix-sreset-header-guards-and-gcc14-diagnostics.patch
+@@ -0,0 +1,51 @@
++--- a/Makefile
+++++ b/Makefile
++@@ -2,8 +2,15 @@
++ EXTRA_CFLAGS += -O1
++ #EXTRA_CFLAGS += -O3
++ EXTRA_CFLAGS += -Wall
++ #EXTRA_CFLAGS += -Wextra
++-EXTRA_CFLAGS += -Werror
+++# Do not force -Werror on 2016-era vendor code: gcc 14 promotes more warnings
+++# and makes six of them errors by default, so -Werror turns every toolchain
+++# bump into a new build failure.  Demote those six back to warnings and let
+++# the rest stay warnings too.
+++EXTRA_CFLAGS += -Wno-error=implicit-function-declaration \
+++	-Wno-error=implicit-int -Wno-error=int-conversion \
+++	-Wno-error=incompatible-pointer-types -Wno-error=return-mismatch \
+++	-Wno-error=declaration-missing-parameter-type
++ #EXTRA_CFLAGS += -pedantic
++ #EXTRA_CFLAGS += -Wshadow -Wpointer-arith -Wcast-qual -Wstrict-prototypes -Wmissing-prototypes
++ EXTRA_CFLAGS += -Wframe-larger-than=1536
++--- a/include/rtl8812a_sreset.h
+++++ b/include/rtl8812a_sreset.h
++@@ -17,7 +17,7 @@
++  *
++  *
++  ******************************************************************************/
++-#ifndef _RTL88812A_SRESET_H_
+++#ifndef _RTL8812A_SRESET_H_
++ #define _RTL8812A_SRESET_H_
++ 
++ #include <rtw_sreset.h>
++--- a/include/rtl8192e_sreset.h
+++++ b/include/rtl8192e_sreset.h
++@@ -17,8 +17,8 @@
++  *
++  *
++  ******************************************************************************/
++-#ifndef _RTL88812A_SRESET_H_
++-#define _RTL8812A_SRESET_H_
+++#ifndef _RTL8192E_SRESET_H_
+++#define _RTL8192E_SRESET_H_
++ 
++ #include <rtw_sreset.h>
++ 
++--- a/include/custom_gpio.h
+++++ b/include/custom_gpio.h
++@@ -1,4 +1,4 @@
++ #ifndef __CUSTOM_GPIO_H__
++-#define __CUSTOM_GPIO_H___
+++#define __CUSTOM_GPIO_H__
++ 
++ #include <drv_conf.h>

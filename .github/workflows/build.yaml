@@ -290,6 +290,17 @@ jobs:
           grep -q -- '-include linux/of.h' feeds/nss_packages/qca-nss-crypto/Makefile \
             || { echo "  qca-nss-crypto does not force-include <linux/of.h>"; exit 1; }
           echo "  ok qca-nss-crypto EXTRA_CFLAGS patched (warning flags + of.h)"
+          # rtl8812au-ct forces -Werror inside its own 2016-era vendor Makefile, and
+          # gcc 14 both warns more and makes six diagnostics errors outright. The
+          # series carries a patch that demotes those six and fixes three typo'd
+          # header guards (gcc 14's -Wheader-guard).
+          RTL=package/kernel/rtl8812au-ct/patches/111-fix-sreset-header-guards-and-gcc14-diagnostics.patch
+          [ -f "$RTL" ] || { echo "  $RTL missing (rtl8812au-ct will die)"; exit 1; }
+          grep -q 'Wno-error=implicit-function-declaration' "$RTL" \
+            || { echo "  $RTL lacks the gcc 14 demotions"; exit 1; }
+          grep -q '#ifndef _RTL8812A_SRESET_H_' "$RTL" \
+            || { echo "  $RTL does not fix the sreset header guard"; exit 1; }
+          echo "  ok rtl8812au-ct: header guards fixed + gcc 14 diagnostics demoted"
 
           echo "== host tools (fatal: gnulib feeds elfutils' libgnu) =="
           # gnulib's lib/obstack.in.h uses "#if @SMALL_PTRDIFF_T@", and gl_FUNC_OBSTACK
