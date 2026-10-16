@@ -237,6 +237,8 @@ jobs:
           grep -q '&switch {' "$DTS" || { echo "  $DTS does not enable the ESS switch"; exit 1; }
           grep -q 'ethernet = <&dp2>;' "$DTS" || { echo "  $DTS CPU port not on dp2"; exit 1; }
           grep -q 'MAC_MODE_SGMII_CHANNEL0' "$DTS" || { echo "  $DTS lacks the SGMII mac mode"; exit 1; }
+          # without this include the NSS kmods build but never attach at runtime
+          grep -q '#include "ipq5018-nss.dtsi"' "$DTS" || { echo "  $DTS does not pull in the NSS nodes"; exit 1; }
           # the fork's ipq5018-nss.dtsi referenced &wifi0, which no board defines (the
           # SoC radio is labelled &wifi), and &wifi1/&wifi2 from a file that three
           # boards (mr5500/mx5500/spnmx56, via ipq5018-mx-base.dtsi) include without
