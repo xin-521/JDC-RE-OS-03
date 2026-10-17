@@ -27,7 +27,13 @@ env:
   # device rides on the plain stable tree with a device-only patch series.
   REMOTE_REPOSITORY: openwrt/openwrt
   REMOTE_BRANCH: v25.12.5
-  PATCH_DIR: patches-stable/
+  # Deliberately not PATCH_DIR. make imports the job environment, and PATCH_DIR
+  # is an OpenWrt make variable (quilt.mk: PATCH_DIR?=$(CURDIR)/patches) that
+  # every package and host tool resolves its patches/ through. Exporting it here
+  # points tools/ninja away from its own patches/010-bootstrap-configure-only.patch,
+  # so configure.py never learns --no-rebuild and the build dies with
+  # "configure.py: error: no such option: --no-rebuild".
+  DEVICE_PATCH_DIR: patches-stable/
   CONFIG_FILE: re-cs-03.config
   CUSTOM_FILES_PATH: files/
   RELEASE_PREFIX: stable
@@ -90,13 +96,13 @@ jobs:
           # failure here is real drift and must stop the build, not be papered over.
           shopt -s nullglob
           applied=0
-          for patch in "builder_repo/${{ env.PATCH_DIR }}"*.patch; do
+          for patch in "builder_repo/${{ env.DEVICE_PATCH_DIR }}"*.patch; do
             echo "Applying $patch"
             sha256sum "$patch"
             git apply --verbose "$patch"
             applied=$((applied + 1))
           done
-          [ "$applied" -gt 0 ] || { echo "no patch matched ${{ env.PATCH_DIR }}"; exit 1; }
+          [ "$applied" -gt 0 ] || { echo "no patch matched ${{ env.DEVICE_PATCH_DIR }}"; exit 1; }
           echo "applied $applied patch file(s)" | tee -a "${GITHUB_STEP_SUMMARY:-/dev/null}"
 
       - name: Update and install feeds
@@ -128,6 +134,18 @@ jobs:
       - name: Verify configuration and patches applied
         run: |
           set -euo pipefail
+          echo "== the job env must not shadow OpenWrt make variables (fatal) =="
+          # make imports the whole environment, so any of these exported from the
+          # workflow would override the value every package and host tool derives
+          # for itself -- quiet, tree-wide, and only visible much later.
+          for v in PATCH_DIR HOST_PATCH_DIR FILES_DIR HOST_FILES_DIR \
+                   TOPDIR BUILD_DIR STAGING_DIR PKG_BUILD_DIR KERNEL_PATCHVER; do
+            if [ -n "$(printenv "$v" || true)" ]; then
+              echo "  $v is exported into the build environment"; exit 1
+            fi
+            printf '  %-16s not exported\n' "$v"
+          done
+
           echo "== config symbols (fatal) =="
           # want=y|m -> line must read "SYM=want". want=n -> must NOT be y/m,
           # because kconfig writes a bool 'n' as "# SYM is not set", not "SYM=n".
@@ -265,6 +283,19 @@ jobs:
           [ -f "$GL" ] || { echo "  $GL missing (tools/elfutils will die)"; exit 1; }
           grep -q 'SMALL_PTRDIFF_T@0' "$GL" || { echo "  $GL has unexpected content"; exit 1; }
           echo "  ok gnulib obstack substitution guarded"
+
+          echo "== tools/ninja: the --no-rebuild patch must still match its Makefile (fatal) =="
+          # ninja's configure.py never had --no-rebuild; OpenWrt's Makefile passes it
+          # only because the vendored patch adds it. If the two ever disagree the
+          # build dies early with "no such option: --no-rebuild" -- assert the pair.
+          if grep -q -- '--no-rebuild' tools/ninja/Makefile; then
+            NINJA_PATCH=tools/ninja/patches/010-bootstrap-configure-only.patch
+            [ -f "$NINJA_PATCH" ] || { echo "  $NINJA_PATCH missing (configure.py will reject --no-rebuild)"; exit 1; }
+            grep -q -- 'no-rebuild' "$NINJA_PATCH" || { echo "  $NINJA_PATCH no longer adds --no-rebuild"; exit 1; }
+            echo "  ok tools/ninja: Makefile and patch agree on --no-rebuild"
+          else
+            echo "  tools/ninja/Makefile no longer passes --no-rebuild; nothing to assert"
+          fi
           echo "VERIFY OK"
 
       - name: Use /mnt for more disk space
@@ -278,9 +309,12 @@ jobs:
         if: always()
         with:
           key: openwrt-build-${{ env.REMOTE_BRANCH }}-${{ needs.check_commits.outputs.latest_commit_sha }}
+          # Branch-scoped only. A bare "openwrt-build" fallback also matches
+          # another tree's cache (the NSS fork's, another branch's), and a
+          # foreign build_dir arrives with valid .prepared stamps: make then
+          # skips Host/Prepare, so that tree's tool sources are reused as-is.
           restore-keys: |
             openwrt-build-${{ env.REMOTE_BRANCH }}-
-            openwrt-build
           path: |
             build_dir
             dl

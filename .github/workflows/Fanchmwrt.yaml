@@ -17,7 +17,13 @@ env:
   REMOTE_BRANCH: fanchmwrt-25.12.4
   CONFIG_FILE: re-cs-03-fanchmwrt.config
   CUSTOM_FILES_PATH: files/
-  PATCH_DIR: patches-fanchmwrt/
+  # Deliberately not PATCH_DIR. make imports the job environment, and PATCH_DIR
+  # is an OpenWrt make variable (quilt.mk: PATCH_DIR?=$(CURDIR)/patches) that
+  # every package and host tool resolves its patches/ through. Exporting it here
+  # points tools/ninja away from its own patches/010-bootstrap-configure-only.patch,
+  # so configure.py never learns --no-rebuild and the build dies with
+  # "configure.py: error: no such option: --no-rebuild".
+  DEVICE_PATCH_DIR: patches-fanchmwrt/
   RELEASE_PREFIX: fanchmwrt-25.12.4
   ENV: fanchmwrt-25.12.4
 
@@ -70,7 +76,7 @@ jobs:
           # It is generated against exactly this branch, so a rejected hunk
           # means the tree moved underneath it and the build must stop.
           shopt -s nullglob
-          for patch in builder_repo/${{ env.PATCH_DIR }}*.patch; do
+          for patch in builder_repo/${{ env.DEVICE_PATCH_DIR }}*.patch; do
             echo "Applying patch $patch ..."
             ls -al "$patch" && sha256sum "$patch"
             git apply --verbose "$patch"
@@ -240,6 +246,17 @@ jobs:
       - name: Verify the device and the excluded plugins
         run: |
           set -euo pipefail
+          echo "== 工作流环境变量不得覆盖 OpenWrt 的 make 变量（fatal） =="
+          # make 会把整个环境导入为变量，上述变量一旦从 workflow 导出，就会
+          # 覆盖每个软件包/宿主工具自己算出的值——静默、全局，且要到很后面才暴露。
+          for v in PATCH_DIR HOST_PATCH_DIR FILES_DIR HOST_FILES_DIR \
+                   TOPDIR BUILD_DIR STAGING_DIR PKG_BUILD_DIR KERNEL_PATCHVER; do
+            if [ -n "$(printenv "$v" || true)" ]; then
+              echo "  $v 被导出进构建环境"; exit 1
+            fi
+            printf '  %-16s 未导出\n' "$v"
+          done
+
           echo "== 被排除的插件必须没有被选中（fatal） =="
           # kconfig writes a refused bool as "# SYM is not set", and a seed line
           # whose package is missing is dropped silently -- both end up absent,
@@ -292,6 +309,19 @@ jobs:
           grep -qE '^[[:space:]]*config PACKAGE_ipq-wifi-jdcloud_re-cs-03([[:space:]]|$)' tmp/.config-package.in \
             || { echo "  ipq-wifi-jdcloud_re-cs-03 not registered in tmp/.config-package.in"; exit 1; }
           echo "  ok ipq-wifi-jdcloud_re-cs-03 registered"
+
+          echo "== tools/ninja：--no-rebuild 补丁必须与它的 Makefile 一致（fatal） =="
+          # ninja 的 configure.py 从来就没有 --no-rebuild 选项，Makefile 之所以敢传，
+          # 全靠这枚自带补丁。两者一旦不一致，构建会在早期直接死于
+          # "no such option: --no-rebuild"——所以在这里先把这对关系钉住。
+          if grep -q -- '--no-rebuild' tools/ninja/Makefile; then
+            NINJA_PATCH=tools/ninja/patches/010-bootstrap-configure-only.patch
+            [ -f "$NINJA_PATCH" ] || { echo "  缺少 $NINJA_PATCH（configure.py 会拒绝 --no-rebuild）"; exit 1; }
+            grep -q -- 'no-rebuild' "$NINJA_PATCH" || { echo "  $NINJA_PATCH 不再提供 --no-rebuild"; exit 1; }
+            echo "  ok tools/ninja：Makefile 与补丁一致"
+          else
+            echo "  tools/ninja/Makefile 不再传 --no-rebuild，无需断言"
+          fi
           echo "VERIFY OK"
 
       # ========== ✅ 自动注入真实编译时间 ==========
@@ -317,9 +347,12 @@ jobs:
         if: always()
         with:
           key: openwrt-build-${{ env.REMOTE_BRANCH }}-${{ needs.check_commits.outputs.latest_commit_sha }}
+          # Branch-scoped only. A bare "openwrt-build" fallback also matches
+          # another tree's cache (the NSS fork's, another branch's), and a
+          # foreign build_dir arrives with valid .prepared stamps: make then
+          # skips Host/Prepare, so that tree's tool sources are reused as-is.
           restore-keys: |
             openwrt-build-${{ env.REMOTE_BRANCH }}-
-            openwrt-build
           path: |
             build_dir
             dl
@@ -413,7 +446,7 @@ jobs:
             ### 📝 Build Information
             - **Target:** [JDCloud RE-CS-03 后羿/哪吒 IPQ50xx]
             - **Configuration:** [`${{ env.CONFIG_FILE }}`](${{ env.CONFIG_FILE }})
-            - **Device patch:** [`${{ env.PATCH_DIR }}re-cs-03.patch`](${{ env.PATCH_DIR }}re-cs-03.patch)
+            - **Device patch:** [`${{ env.DEVICE_PATCH_DIR }}re-cs-03.patch`](${{ env.DEVICE_PATCH_DIR }}re-cs-03.patch)
 
             ### 📦 插件说明（全部预装内置固件，刷机直接使用，附带离线APK备份）
             - Argon 主题 + 配置面板
