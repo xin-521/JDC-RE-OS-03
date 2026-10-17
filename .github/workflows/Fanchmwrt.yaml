@@ -87,8 +87,10 @@ jobs:
           df -hT
           #echo 'src-git custom https://github.com/kiddin9/kwrt-packages' >> feeds.conf.default
           # argon theme only: passwall2 / openclash / accesscontrol deliberately absent
+          # luci-app-argon-config is NOT cloned: since 3.0.0 luci-theme-argon sets
+          # LUCI_BASENAME:=argon-config and ships the config app's files itself, so
+          # the old standalone repo only collides with it at package/install.
           git clone https://github.com/jerrykuku/luci-theme-argon.git package/feeds/luci/luci-theme-argon
-          git clone https://github.com/jerrykuku/luci-app-argon-config.git package/feeds/luci/luci-app-argon-config
           #git clone https://github.com/dgyangxf/luci-app-vlmcsd.git package/feeds/luci/luci-app-vlmcsd
           #git clone https://github.com/im-0/openwrt-package.vlmcsd.git package/utils/vlmcsd
           #git clone https://github.com/sbwml/openwrt-qBittorrent package/feeds/qBittorrent
@@ -118,7 +120,6 @@ jobs:
           # 然后添加其他插件配置（保留原有全部 echo 命令）
           echo "CONFIG_USE_APK=y" >> .config
           echo "CONFIG_PACKAGE_luci-theme-argon=y" >> .config
-          echo "CONFIG_PACKAGE_luci-app-argon-config=y" >> .config
           echo "CONFIG_PACKAGE_luci-theme-fanchmwrt=y" >> .config
 
           # 按要求不编译 OpenClash / PassWall2 / Docker（源码都不再克隆进来）

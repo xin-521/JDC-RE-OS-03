@@ -118,8 +118,14 @@ jobs:
           ./scripts/feeds install -a -p luci && ./scripts/feeds install -a -p packages && ./scripts/feeds install -a -p small && ./scripts/feeds install -a -p diskman
           git clone https://github.com/Openwrt-Passwall/openwrt-passwall2.git package/feeds/luci/luci-app-passwall2
           git clone https://github.com/Openwrt-Passwall/openwrt-passwall-packages.git package/utils/passwall2
+          # argon: only the theme. Since luci-theme-argon 3.0.0 the theme sets
+          # LUCI_BASENAME:=argon-config and installs the whole config app itself
+          # (etc/config/argon, menu.d/acl.d/luci-app-argon-config.json,
+          # resources/view/argon-config.js, rpcd/luci.argon*). The standalone
+          # jerrykuku/luci-app-argon-config repo is the pre-3.0.0 shim and ships
+          # the same paths, so installing both dies with
+          # "trying to overwrite ... owned by luci-theme-argon" at package/install.
           git clone https://github.com/jerrykuku/luci-theme-argon.git package/feeds/luci/luci-theme-argon
-          git clone https://github.com/jerrykuku/luci-app-argon-config.git package/feeds/luci/luci-app-argon-config
           # this tree has no NSS feeds: offload is gone, see the env comment
           #git clone https://github.com/sbwml/openwrt-qBittorrent package/feeds/qBittorrent
 
