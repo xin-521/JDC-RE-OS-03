@@ -1,0 +1,428 @@
+name: Build OpenWrt - FanchmWrt (official) + JDCloud RE-CS-03
+
+permissions:
+  contents: write
+  actions: write
+
+on:
+  #push:
+    #branches:
+      #- fanchmwrt-25.12.4
+  workflow_dispatch:
+
+env:
+  # Upstream FanchmWrt project. Super-Henry/Fanchmwrt@henry-25.12.4 is one
+  # person's clone branch of this tree and is deliberately not used.
+  REMOTE_REPOSITORY: fanchmwrt/fanchmwrt
+  REMOTE_BRANCH: fanchmwrt-25.12.4
+  CONFIG_FILE: re-cs-03.config
+  CUSTOM_FILES_PATH: files/
+  PATCH_DIR: patches-fanchmwrt/
+  RELEASE_PREFIX: fanchmwrt-25.12.4
+  ENV: fanchmwrt-25.12.4
+
+jobs:
+  check_commits:
+    name: Check for new commits
+    runs-on: ubuntu-24.04
+    outputs:
+      new_commits: ${{ steps.check_commits.outputs.new_commits }}
+      latest_commit_sha: ${{ steps.check_commits.outputs.latest_commit_sha }}
+    steps:
+      - name: Check for new commits
+        id: check_commits
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          latest_sha=$(gh api "repos/${{ env.REMOTE_REPOSITORY }}/branches/${{ env.REMOTE_BRANCH }}" --jq .commit.sha)
+          release_body=$(gh api "repos/${{ github.repository }}/releases/latest" --jq .body 2>/dev/null || echo "")
+
+          new_commits=$([[ "$release_body" == *"$latest_sha"* ]] && echo "false" || echo "true")
+
+          echo "new_commits=$new_commits" >> "$GITHUB_OUTPUT"
+          echo "latest_commit_sha=$latest_sha" >> "$GITHUB_OUTPUT"
+
+  build:
+    name: Build OpenWrt
+    needs: check_commits
+    if: github.event_name == 'workflow_dispatch' || needs.check_commits.outputs.new_commits == 'true'
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Install dependencies
+        run: sudo apt update && sudo apt install -y build-essential clang flex bison g++ gawk gcc-multilib g++-multilib gettext git libncurses5-dev libssl-dev python3-setuptools rsync swig unzip zlib1g-dev file wget
+      - name: Checkout remote repository
+        uses: actions/checkout@v4
+        with:
+          repository: ${{ env.REMOTE_REPOSITORY }}
+          ref: ${{ env.REMOTE_BRANCH }}
+
+      - name: Checkout current repository
+        uses: actions/checkout@v4
+        with:
+          path: "builder_repo"
+
+      - name: Add custom patches
+        run: |
+          set -euo pipefail
+          df -hT
+          # patches-fanchmwrt/re-cs-03.patch brings the JDCloud RE-CS-03 device
+          # into this tree (DTS, board data, board.d, eMMC upgrade, uboot env).
+          # It is generated against exactly this branch, so a rejected hunk
+          # means the tree moved underneath it and the build must stop.
+          shopt -s nullglob
+          for patch in builder_repo/${{ env.PATCH_DIR }}*.patch; do
+            echo "Applying patch $patch ..."
+            ls -al "$patch" && sha256sum "$patch"
+            git apply --verbose "$patch"
+          done
+
+      - name: Update and install feeds
+        run: |
+          df -hT
+          #echo 'src-git custom https://github.com/kiddin9/kwrt-packages' >> feeds.conf.default
+          # argon theme only: passwall2 / openclash are deliberately not built
+          git clone https://github.com/jerrykuku/luci-theme-argon.git package/feeds/luci/luci-theme-argon
+          git clone https://github.com/jerrykuku/luci-app-argon-config.git package/feeds/luci/luci-app-argon-config
+          #git clone https://github.com/dgyangxf/luci-app-vlmcsd.git package/feeds/luci/luci-app-vlmcsd
+          #git clone https://github.com/im-0/openwrt-package.vlmcsd.git package/utils/vlmcsd
+          #git clone https://github.com/sbwml/openwrt-qBittorrent package/feeds/qBittorrent
+          unzip builder_repo/luci-app-accesscontrol.zip -d package/feeds/luci/applications
+          ./scripts/feeds update -a 
+          ./scripts/feeds install -a
+          make defconfig -j$(nproc)
+
+
+      - name: Setup configuration and custom files
+        run: |
+          df -hT
+          cat builder_repo/${{ env.CONFIG_FILE }} >> .config
+
+
+          # ==============================================
+          # 全局修复 pre-install 脚本报错 / ubus/service缺失
+          # ==============================================
+          echo "CONFIG_PACKAGE_procd=y" >> .config
+          echo "CONFIG_PACKAGE_ubus=y" >> .config
+          echo "CONFIG_PACKAGE_ubusd=y" >> .config
+          echo "CONFIG_PACKAGE_service=y" >> .config
+          echo "CONFIG_PACKAGE_openwrt-release=y" >> .config
+          # 已删除无效配置 CONFIG_TARGET_PERMISSION_SET
+          echo "CONFIG_PACKAGE_blockd=y" >> .config
+          echo "CONFIG_PACKAGE_lsblk=y" >> .config
+          echo "CONFIG_PACKAGE_dmidecode=y" >> .config
+          # 然后添加其他插件配置（保留原有全部 echo 命令）
+          echo "CONFIG_USE_APK=y" >> .config
+          echo "CONFIG_PACKAGE_luci-theme-argon=y" >> .config
+          echo "CONFIG_PACKAGE_luci-app-argon-config=y" >> .config
+          echo "CONFIG_PACKAGE_luci-theme-fanchmwrt=y" >> .config
+
+          # 按要求不编译 OpenClash / PassWall2 / Docker（源码都不再克隆进来）
+
+          echo "CONFIG_PACKAGE_luci-compat=y" >> .config
+          echo "CONFIG_PACKAGE_luci-base=y" >> .config
+
+          echo "" >> .config
+          echo "# TLS / 常用依赖（FWX 与其余插件共用）" >> .config
+          echo "CONFIG_PACKAGE_openssl=y" >> .config
+          echo "CONFIG_PACKAGE_coreutils=y" >> .config
+          echo "CONFIG_PACKAGE_coreutils-nohup=y" >> .config
+          echo "CONFIG_PACKAGE_bash=y" >> .config
+          echo "CONFIG_PACKAGE_jsonfilter=y" >> .config
+          echo "CONFIG_PACKAGE_ca-certificates=y" >> .config
+
+          echo "" >> .config
+          echo "# 必须集成内核模块" >> .config
+          echo "CONFIG_PACKAGE_kmod-tun=y" >> .config
+          echo "CONFIG_PACKAGE_kmod-inet-diag=y" >> .config
+          echo "CONFIG_PACKAGE_kmod-nf-tproxy=y" >> .config
+          echo "CONFIG_PACKAGE_kmod-ipt-tproxy=y" >> .config
+
+          echo "" >> .config
+          echo "# 必要工具" >> .config
+          echo "CONFIG_PACKAGE_iptables=y" >> .config
+          echo "CONFIG_PACKAGE_iptables-mod-tproxy=y" >> .config
+          echo "CONFIG_PACKAGE_curl=y" >> .config
+          echo "CONFIG_PACKAGE_unzip=y" >> .config
+          echo "CONFIG_PACKAGE_ca-bundle=y" >> .config
+
+          echo "" >> .config
+          echo "# 辅助组件" >> .config
+          echo "CONFIG_PACKAGE_ipset=y" >> .config
+          echo "CONFIG_PACKAGE_libcap=y" >> .config
+          echo "CONFIG_PACKAGE_libstdcpp=y" >> .config
+
+          echo "" >> .config
+          echo "# DNS 配置" >> .config
+          echo "CONFIG_PACKAGE_dnsmasq-full=y" >> .config
+          echo "CONFIG_PACKAGE_dnsmasq=n" >> .config
+
+          echo "" >> .config
+          echo "# WEB挂载点" >> .config
+          echo "CONFIG_PACKAGE_luci-mod-system=y" >> .config
+          echo "CONFIG_PACKAGE_luci-mod-system-mountpoints=y" >> .config
+          echo "CONFIG_PACKAGE_block-mount=y" >> .config
+
+          # ====================== 存储 / 容器内核选项（Docker 本身不编译，只保留通用内核功能） =====================
+          echo "" >> .config
+          echo "# 容器网络/存储内核模块" >> .config
+          echo "CONFIG_PACKAGE_kmod-veth=y" >> .config
+          echo "CONFIG_PACKAGE_kmod-bridge=y" >> .config
+          echo "CONFIG_PACKAGE_kmod-nft-bridge=y" >> .config
+          echo "CONFIG_PACKAGE_kmod-ipt-nat=y" >> .config
+          echo "CONFIG_PACKAGE_kmod-fs-overlay=y" >> .config
+          echo "CONFIG_PACKAGE_kmod-fs-ext4=y" >> .config
+          echo "CONFIG_PACKAGE_kmod-fs-swap=y" >> .config
+          echo "CONFIG_PACKAGE_kmod-dm=y" >> .config
+
+          echo "# USB存储支持" >> .config
+          echo "CONFIG_PACKAGE_kmod-usb-storage=y" >> .config
+          echo "CONFIG_PACKAGE_kmod-usb-ohci=y" >> .config
+          echo "CONFIG_PACKAGE_kmod-usb-uhci=y" >> .config
+          echo "CONFIG_PACKAGE_block-mount=y" >> .config
+          echo "CONFIG_PACKAGE_mountd=y" >> .config
+
+          echo "# 内核核心开关" >> .config
+          echo "CONFIG_CGROUPS=y" >> .config
+          echo "CONFIG_CGROUP_FREEZER=y" >> .config
+          echo "CONFIG_CGROUP_PIDS=y" >> .config
+          echo "CONFIG_CGROUP_DEVICE=y" >> .config
+          echo "CONFIG_CGROUP_CPUACCT=y" >> .config
+          echo "CONFIG_CGROUP_SCHED=y" >> .config
+          echo "CONFIG_CPUSETS=y" >> .config
+          echo "CONFIG_MEMCG=y" >> .config
+          echo "CONFIG_MEMCG_SWAP=y" >> .config
+          echo "CONFIG_MEMCG_SWAP_ENABLED=y" >> .config
+          echo "CONFIG_CGROUP_HUGETLB=y" >> .config
+          echo "CONFIG_CGROUP_PERF=y" >> .config
+          echo "CONFIG_NAMESPACES=y" >> .config
+          echo "CONFIG_NET_NS=y" >> .config
+          echo "CONFIG_PID_NS=y" >> .config
+          echo "CONFIG_IPC_NS=y" >> .config
+          echo "CONFIG_UTS_NS=y" >> .config
+          echo "CONFIG_USER_NS=y" >> .config
+          echo "CONFIG_OVERLAY_FS=y" >> .config
+          echo "CONFIG_OVERLAY_FS_REDIRECT_DIR=y" >> .config
+          echo "CONFIG_OVERLAY_FS_INDEX=y" >> .config
+          echo "CONFIG_OVERLAY_FS_XINO_AUTO=y" >> .config
+          echo "CONFIG_OVERLAY_FS_METACOPY=y" >> .config
+          echo "CONFIG_VETH=y" >> .config
+          echo "CONFIG_BRIDGE=y" >> .config
+          echo "CONFIG_BRIDGE_NETFILTER=y" >> .config
+          echo "CONFIG_SECCOMP=y" >> .config
+          echo "CONFIG_SECCOMP_FILTER=y" >> .config
+          echo "CONFIG_CAPABILITIES=y" >> .config
+          echo "CONFIG_POSIX_MQUEUE=y" >> .config
+          echo "CONFIG_POSIX_MQUEUE_SYSCTL=y" >> .config
+          echo "CONFIG_BLK_DEV_DM=y" >> .config
+          echo "CONFIG_DM_THIN_PROVISIONING=y" >> .config
+          echo "CONFIG_BLK_DEV_LOOP=y" >> .config
+          echo "CONFIG_BLK_DEV_LOOP_MIN_COUNT=16" >> .config
+          echo "CONFIG_BLK_DEV_RAM=y" >> .config
+          echo "CONFIG_SWAP=y" >> .config
+          echo "CONFIG_SWAPFILE=y" >> .config
+          echo "CONFIG_NETFILTER_XT_MATCH_ADDRTYPE=y" >> .config
+          echo "CONFIG_NETFILTER_XT_MATCH_CONNTRACK=y" >> .config
+          echo "CONFIG_IP_VS=y" >> .config
+          echo "CONFIG_IP_VS_NFCT=y" >> .config
+          # ====================== 存储 / 容器内核选项结束 ======================
+          # 新增校验打印
+          echo "===== FWX CONFIG 校验 ====="
+          grep "CONFIG_PACKAGE.*fwx" .config
+          echo "==========================="
+          
+          make defconfig -j$(nproc)
+          
+          # 最后再运行一次 oldconfig 确保依赖正确
+          make oldconfig
+          
+          mkdir -p ${{ env.CUSTOM_FILES_PATH }}
+          [ -d "builder_repo/${{ env.CUSTOM_FILES_PATH }}" ] && mv builder_repo/${{ env.CUSTOM_FILES_PATH }}* ${{ env.CUSTOM_FILES_PATH }} || true
+
+      - name: Verify the device and the excluded plugins
+        run: |
+          set -euo pipefail
+          echo "== 被排除的插件必须没有被选中（fatal） =="
+          # kconfig writes a refused bool as "# SYM is not set", and a seed line
+          # whose package is missing is dropped silently -- both end up absent,
+          # which is exactly what we want here.
+          for sym in CONFIG_PACKAGE_luci-app-openclash CONFIG_PACKAGE_openclash \
+                     CONFIG_PACKAGE_luci-app-passwall2 CONFIG_PACKAGE_passwall2 \
+                     CONFIG_PACKAGE_dockerd CONFIG_PACKAGE_docker \
+                     CONFIG_PACKAGE_luci-app-dockerman; do
+            if grep -qE "^${sym}=[ym]$" .config; then
+              echo "  $sym is SET but must not be built"; exit 1
+            fi
+            printf '  %-48s not-set\n' "$sym"
+          done
+
+          echo "== RE-CS-03 device must be present (fatal) =="
+          grep -qE '^CONFIG_TARGET_qualcommax_ipq50xx_DEVICE_jdcloud_re-cs-03=y' .config \
+            || { echo "  the device symbol is missing -- patch not applied?"; exit 1; }
+          for f in \
+            target/linux/qualcommax/files/arch/arm64/boot/dts/qcom/ipq5018-re-cs-03.dts \
+            target/linux/qualcommax/ipq50xx/base-files/lib/upgrade/platform.sh \
+            package/firmware/ipq-wifi/files/board-jdcloud_re-cs-03.ipq5018 \
+            package/firmware/ipq-wifi/files/board-jdcloud_re-cs-03.qcn6122 ; do
+            [ -f "$f" ] || { echo "  MISSING $f"; exit 1; }
+            echo "  ok $f"
+          done
+          grep -q 'jdcloud,re-cs-03' target/linux/qualcommax/ipq50xx/base-files/lib/upgrade/platform.sh
+          grep -q 'jdcloud,re-cs-03' target/linux/qualcommax/ipq50xx/base-files/etc/board.d/02_network
+          grep -q 'jdcloud_re-cs-03' package/firmware/ipq-wifi/Makefile
+          echo "  ok device wired into platform.sh / 02_network / ipq-wifi"
+          grep -qE '^[[:space:]]*config PACKAGE_ipq-wifi-jdcloud_re-cs-03([[:space:]]|$)' tmp/.config-package.in \
+            || { echo "  ipq-wifi-jdcloud_re-cs-03 not registered in tmp/.config-package.in"; exit 1; }
+          echo "  ok ipq-wifi-jdcloud_re-cs-03 registered"
+          echo "VERIFY OK"
+
+      # ========== ✅ 自动注入真实编译时间 ==========
+      - name: Inject real build timestamp
+        run: |
+          BUILD_DATE=$(date +%s)
+          BUILD_DATE_FRIENDLY=$(date +"%Y-%m-%d %H:%M:%S")
+          echo "BUILD_DATE=\"$BUILD_DATE\"" >> package/base-files/files/etc/os-release
+          mkdir -p files/etc
+          echo "固件编译时间: $BUILD_DATE_FRIENDLY" > files/etc/build_time
+          echo "编译源码提交: ${{ needs.check_commits.outputs.latest_commit_sha }}" >> files/etc/build_time
+
+      - name: Use /mnt for more disk space
+        #把源码目录挂载到 /mnt 大容量分区，解决 GitHub 默认磁盘空间不足、编译中途报磁盘满的问题  
+        if: always()
+        run: |
+          sudo mkdir -p /mnt/upper /mnt/work && sudo chmod a+w /mnt/upper
+          sudo mount -t overlay -olowerdir=$(pwd),upperdir=/mnt/upper,workdir=/mnt/work overlay $(pwd)
+          df -hT
+
+      - name: Restore cache from previous build
+        uses: actions/cache@v4
+        if: always()
+        with:
+          key: openwrt-build-${{ env.REMOTE_BRANCH }}-${{ needs.check_commits.outputs.latest_commit_sha }}
+          restore-keys: |
+            openwrt-build-${{ env.REMOTE_BRANCH }}-
+            openwrt-build
+          path: |
+            build_dir
+            dl
+            staging_dir
+            tmp
+
+      - name: Clean up old caches
+        if: always()
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh api repos/${{ github.repository }}/actions/caches --paginate --jq '.actions_caches[0:] | .[] |.key' | while read key; do
+            echo "Removing old cache $key ..."
+            gh api -X DELETE "/repos/${{ github.repository }}/actions/caches?key=$key" 2>/dev/null || true
+          done
+
+      - name: Download packages
+        run: |
+          df -hT
+          ./scripts/feeds update -a
+          make download -j$(nproc)
+          
+      - name: Build firmware
+        env: 
+          CMAKE_POLICY_VERSION_MINIMUM: 3.5
+        run: |
+          df -hT
+          make check -j$(nproc) FIXUP=1 V=s
+          make -j$(nproc) || make -j1 V=s  # Retry single-threaded on failure
+          tar cvzf bin/targets/qualcommax/ipq50xx/snapshots.tar.gz -C bin packages/aarch64_cortex-a53 targets/qualcommax/ipq50xx/packages
+
+      - name: Verify packages in firmware
+        run: |
+          echo "=== 明确不编译的插件（必须找不到） ==="
+          for p in openclash passwall dockerd docker-compose luci-app-dockerman; do
+            if find bin/ -name "*.apk" | grep -qiE "$p"; then
+              echo "❌ 不应编译却出现: $p"; find bin/ -name "*.apk" | grep -iE "$p"; exit 1
+            fi
+            echo "✅ 未编译 $p"
+          done
+          echo ""
+          echo "=== 应编译的插件 ==="
+          find bin/ -name "*fwx-dashboard*.apk" || echo "⚠️ 未编译 luci-app-fwx-dashboard"
+          find bin/ -name "*.apk" | grep -E "(argon)" || echo "⚠️ 未找到 Argon 主题apk"
+          echo ""
+          echo "=== 设备镜像 ==="
+          ls -l bin/targets/qualcommax/ipq50xx/*jdcloud* || { echo "❌ 没有生成 jdcloud 镜像"; exit 1; }
+          echo "=== 验证完成 ==="
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: ipq50xx-images
+          path: bin/targets/qualcommax/ipq50xx
+
+      - name: Check disk space usage
+        if: always()
+        run: df -hT
+
+  release:
+    name: Create release
+    needs: [check_commits, build]
+    if: needs.build.result == 'success'
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Download artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: ipq50xx-images
+          path: firmware
+      - name: Set release date with timestamp
+        run: |
+          echo "RELEASE_DATE=$(date +%F)" >> $GITHUB_ENV
+          echo "RELEASE_TIME=$(date +%H-%M-%S)" >> $GITHUB_ENV
+      - name: Publish release
+        uses: softprops/action-gh-release@master
+        with:
+          files: firmware/*
+          tag_name: ${{ env.RELEASE_PREFIX }}-${{ env.RELEASE_DATE }}-${{ env.RELEASE_TIME }}
+          name: 🚀 OpenWrt Build Release ${{ env.RELEASE_DATE }} ${{ env.RELEASE_TIME }}
+          body: |
+            ## 📦 OpenWrt Automated Build Release
+
+            **Build Date:** ${{ env.RELEASE_DATE }} ${{ env.RELEASE_TIME }}
+
+            ### 🔄 Main Repository
+            **Repository:** [${{ env.REMOTE_REPOSITORY }}](https://github.com/${{ env.REMOTE_REPOSITORY }})
+            **Branch:** `${{ env.REMOTE_BRANCH }}` (FanchmWrt official stable)
+            **Commit:** `${{ needs.check_commits.outputs.latest_commit_sha }}`
+
+            ### 📝 Build Information
+            - **Target:** [JDCloud RE-CS-03 后羿/哪吒 IPQ50xx]
+            - **Configuration:** [`${{ env.CONFIG_FILE }}`](${{ env.CONFIG_FILE }})
+            - **Device patch:** [`${{ env.PATCH_DIR }}re-cs-03.patch`](${{ env.PATCH_DIR }}re-cs-03.patch)
+
+            ### 📦 插件说明（全部预装内置固件，刷机直接使用，附带离线APK备份）
+            - Argon 主题 + 配置面板
+            - FanchmWrt 主题
+            - FWX 完整防火墙面板全套（限速/防攻击/MAC过滤/会话统计）
+            - OpenAppFilter(OAF) 七层DPI应用管控过滤
+
+            ### 🚫 本次不编译
+            - OpenClash、PassWall2、Docker（源码不克隆、配置不启用）
+
+            ### 📋 Notes
+            - Automated build triggered by ${{ github.event_name }}
+            - Previous releases are automatically cleaned up (keeping latest 5)
+            - 固件内置插件，压缩包内APK仅作备份重装使用
+            ---
+            _Generated by GitHub Actions 🤖_
+
+      - name: Clean up old releases
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          df -hT
+          gh api repos/${{ github.repository }}/releases --paginate --jq '.[5:10] | .[] | "\(.id) \(.tag_name)"' | while read id tag; do
+            # the tag is <prefix>-<YYYY-MM-DD>-<HH-MM-SS>; keep the ones that
+            # land on the 1st/8th/15th/23rd and drop the rest of the tail
+            day=$(echo "$tag" | sed -n 's/.*-[0-9]\{4\}-[0-9]\{2\}-\([0-9]\{2\}\)-.*/\1/p')
+            if [ -n "$day" ] && [ "$day" != "01" ] && [ "$day" != "08" ] && [ "$day" != "15" ] && [ "$day" != "23" ]; then
+              echo "Removing old release $tag ..."
+              gh api -X DELETE "repos/${{ github.repository }}/releases/$id" && gh api -X DELETE "repos/${{ github.repository }}/git/refs/tags/$tag" 2>/dev/null || true
+            fi
+          done
