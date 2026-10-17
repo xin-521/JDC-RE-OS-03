@@ -102,7 +102,10 @@ jobs:
       - name: Setup configuration and custom files
         run: |
           df -hT
+          # The seed must end with a newline, otherwise `cat` glues its last line
+          # onto the first `echo` below and both symbols are silently lost.
           cat builder_repo/${{ env.CONFIG_FILE }} >> .config
+          echo "" >> .config
 
 
           # ==============================================
@@ -291,6 +294,33 @@ jobs:
           done < <(grep -oE '^CONFIG_PACKAGE_[A-Za-z0-9._+-]+=y' builder_repo/${{ env.CONFIG_FILE }} | sed 's/=y$//' | sort -u)
           echo "  checked $n seed CONFIG_PACKAGE_*=y symbols"
           [ "$miss" = 0 ] || { echo "  ^^^ seed package(s) dropped by kconfig"; exit 1; }
+
+          echo "== the seed's =n lines must also survive make defconfig (fatal) =="
+          # Symmetric to the check above: if a seed turns a package off and a
+          # DEFAULT_PACKAGES entry or a dependency quietly re-selects it, we ship
+          # the wrong variant without a word.
+          nset=0; nn=0
+          while read -r sym; do
+            nn=$((nn + 1))
+            if grep -qE "^${sym}=[ym]$" .config; then
+              echo "  STILL SET in .config: $sym (the seed turned it off)"; nset=1
+            fi
+          done < <(grep -oE '^CONFIG_PACKAGE_[A-Za-z0-9._+-]+=n' builder_repo/${{ env.CONFIG_FILE }} | sed 's/=n$//' | sort -u)
+          echo "  checked $nn seed CONFIG_PACKAGE_*=n symbols"
+          [ "$nset" = 0 ] || { echo "  ^^^ a package the seed disabled came back"; exit 1; }
+
+          echo "== the wireless daemon must match 999-QOL_config (fatal) =="
+          # 999-QOL_config enables 802.11v (bss_transition, wnm_sleep_mode) and
+          # proxy_arp, which only the *full* wpad variants support (CONFIG_WNM /
+          # CONFIG_PROXYARP).  A basic wpad rejects them and add_iface fails, so
+          # the radios never come up -- assert the pair here, not on the device.
+          if grep -qE 'bss_transition|wnm_sleep_mode|proxy_arp' files/etc/uci-defaults/999-QOL_config; then
+            if grep -qE '^CONFIG_PACKAGE_wpad-basic[a-z0-9-]*=[ym]$' .config; then
+              echo "  999-QOL_config needs WNM/PROXYARP but a *basic* wpad is selected"; exit 1; fi
+            if ! grep -qE '^CONFIG_PACKAGE_wpad(-openssl|-mbedtls|-wolfssl)?=[ym]$' .config; then
+              echo "  999-QOL_config needs WNM/PROXYARP but no full wpad is in .config"; exit 1; fi
+            echo "  full wpad selected, QoL 802.11v/proxy_arp will be accepted"
+          fi
 
           echo "== RE-CS-03 device must be present (fatal) =="
           grep -qE '^CONFIG_TARGET_qualcommax_ipq50xx_DEVICE_jdcloud_re-cs-03=y' .config \
