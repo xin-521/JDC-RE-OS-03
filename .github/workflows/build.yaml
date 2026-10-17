@@ -1,4 +1,4 @@
-name: Build OpenWrt 25.12 + NSS (qualcommax/ipq50xx, jdcloud re-cs-03)
+name: Build OpenWrt 25.12 stable (qualcommax/ipq50xx, jdcloud re-cs-03)
 
 permissions:
   contents: write
@@ -17,19 +17,20 @@ on:
     paths:
       - '.github/workflows/build.yaml'
       - 're-cs-03.config'
-      - 'patches/**'
-      - 'ci/**'
+      - 'patches-stable/**'
       - 'files/**'
   workflow_dispatch:
 
 env:
-  # OpenWrt 25.12 stable + the NSS patch set on top (kernel 6.12). Vanilla upstream
-  # 25.12 carries no NSS symbols at all, so base and offload are one tree here.
-  REMOTE_REPOSITORY: qosmio/openwrt-ipq
-  REMOTE_BRANCH: 25.12-nss
+  # Vanilla upstream 25.12 stable. The NSS fork (qosmio/openwrt-ipq@25.12-nss)
+  # built firmware the board would not boot, so NSS offload is dropped and the
+  # device rides on the plain stable tree with a device-only patch series.
+  REMOTE_REPOSITORY: openwrt/openwrt
+  REMOTE_BRANCH: v25.12.5
+  PATCH_DIR: patches-stable/
   CONFIG_FILE: re-cs-03.config
   CUSTOM_FILES_PATH: files/
-  RELEASE_PREFIX: stable-nss
+  RELEASE_PREFIX: stable
   ENV: main
 
 jobs:
@@ -84,43 +85,20 @@ jobs:
         run: |
           set -euo pipefail
           df -hT
-          # Applied per file on purpose: `git apply` is atomic, so one drifted file
-          # would block the whole series -- including the two binary board files that
-          # only git can apply. A rejected file is ported by ci/nss-port.py below.
-          # relative dir on purpose: a Windows/msys2 runner root maps /tmp differently
-          # for bash and python3, a relative path resolves the same for both
-          PDIR=.patchparts
-          rm -rf "$PDIR"; mkdir -p "$PDIR"
-          python3 - "$PDIR" <<'PY'
-          import io, os, re, sys
-          out = sys.argv[1]
-          p = io.open('builder_repo/patches/re-cs-03.patch', encoding='utf-8', newline='').read()
-          parts = [c for c in re.split(r'(?m)^(?=diff --git )', p) if c.strip()]
-          for i, c in enumerate(parts):
-              io.open(os.path.join(out, '%02d.patch' % i), 'w', encoding='utf-8', newline='').write(c)
-          print("%d patch parts" % len(parts))
-          PY
+          # One series, applied atomically: it is generated against this exact tree
+          # (openwrt/openwrt v25.12.5) and verified to apply with no rejects, so a
+          # failure here is real drift and must stop the build, not be papered over.
           shopt -s nullglob
-          rejected=""
-          for part in "$PDIR"/*.patch; do
-            f="$(sed -n 's|^diff --git a/[^ ]* b/||p' "$part" | head -1)"
-            sha256sum "$part"
-            if git apply --verbose "$part"; then
-              echo "applied: $f"
-            else
-              echo "::warning::hunk rejected on this tree (will be ported): $f"
-              rejected="$rejected $f"
-            fi
+          applied=0
+          for patch in "builder_repo/${{ env.PATCH_DIR }}"*.patch; do
+            echo "Applying $patch"
+            sha256sum "$patch"
+            git apply --verbose "$patch"
+            applied=$((applied + 1))
           done
-          echo "rejected:${rejected:- none}" | tee -a "${GITHUB_STEP_SUMMARY:-/dev/null}"
+          [ "$applied" -gt 0 ] || { echo "no patch matched ${{ env.PATCH_DIR }}"; exit 1; }
+          echo "applied $applied patch file(s)" | tee -a "${GITHUB_STEP_SUMMARY:-/dev/null}"
 
-      - name: Port the device support onto this tree
-        run: |
-          set -euo pipefail
-          # Fallback for anything the series rejected: same content, anchored on
-          # lines that exist on either tree, idempotent (marker check per edit).
-          python3 builder_repo/ci/nss-port.py
-            
       - name: Update and install feeds
         run: |
           df -hT
@@ -136,13 +114,7 @@ jobs:
           git clone https://github.com/Openwrt-Passwall/openwrt-passwall-packages.git package/utils/passwall2
           git clone https://github.com/jerrykuku/luci-theme-argon.git package/feeds/luci/luci-theme-argon
           git clone https://github.com/jerrykuku/luci-app-argon-config.git package/feeds/luci/luci-app-argon-config
-          # this tree's feeds.conf.default already points at both NSS feeds
-          ./scripts/feeds install -a -p nss_packages || echo "::warning::feeds install -p nss_packages failed"
-          ./scripts/feeds install -a -p sqm_scripts_nss || echo "::warning::feeds install -p sqm_scripts_nss failed"
-          # 6.12 enables -Wmissing-prototypes/-Wmissing-declarations globally and this
-          # tree promotes warnings to errors; the QSDK HAL file the fork never built
-          # (qca-nss-crypto's ipq50xx one) does not silence them itself.
-          python3 builder_repo/ci/nss-warnings.py
+          # this tree has no NSS feeds: offload is gone, see the env comment
           #git clone https://github.com/sbwml/openwrt-qBittorrent package/feeds/qBittorrent
 
       - name: Setup configuration and custom files
@@ -237,18 +209,7 @@ jobs:
           grep -q '&switch {' "$DTS" || { echo "  $DTS does not enable the ESS switch"; exit 1; }
           grep -q 'ethernet = <&dp2>;' "$DTS" || { echo "  $DTS CPU port not on dp2"; exit 1; }
           grep -q 'MAC_MODE_SGMII_CHANNEL0' "$DTS" || { echo "  $DTS lacks the SGMII mac mode"; exit 1; }
-          # without this include the NSS kmods build but never attach at runtime
-          grep -q '#include "ipq5018-nss.dtsi"' "$DTS" || { echo "  $DTS does not pull in the NSS nodes"; exit 1; }
-          # the fork's ipq5018-nss.dtsi referenced &wifi0, which no board defines (the
-          # SoC radio is labelled &wifi), and &wifi1/&wifi2 from a file that three
-          # boards (mr5500/mx5500/spnmx56, via ipq5018-mx-base.dtsi) include without
-          # ipq5018-qcn6122.dtsi -- so those two hunks moved to where the labels live.
-          NSS=target/linux/qualcommax/files/arch/arm64/boot/dts/qcom/ipq5018-nss.dtsi
-          grep -q '^&wifi {' "$NSS" || { echo "  $NSS: &wifi0 was not renamed to &wifi"; exit 1; }
-          ! grep -qE '&wifi[012]' "$NSS" || { echo "  $NSS still references a wifi0/1/2 label"; exit 1; }
-          [ "$(grep -c 'nss-radio-priority' target/linux/qualcommax/files/arch/arm64/boot/dts/qcom/ipq5018-qcn6122.dtsi)" = 2 ] \
-            || { echo "  ipq5018-qcn6122.dtsi: the two radio priorities are missing"; exit 1; }
-          echo "  ok ipq50xx DTS: ESS ports, nss.dtsi labels and qcn6122 priorities"
+          echo "  ok ipq50xx DTS: ESS ports wired like every other ipq50xx board"
 
           echo "== custom files / hostname (fatal) =="
           grep -q "hostname='OpenWrt'" package/base-files/files/bin/config_generate
@@ -265,25 +226,7 @@ jobs:
           grep -q "set dhcp.lan.dhcpv6='server'" files/etc/uci-defaults/999-QOL_config
           echo "  ok IPv6 enabled (lan/wan/br-lan, LAN RA+DHCPv6 server)"
 
-          echo "== NSS (fatal: the whole point of this tree) =="
-          nsscheck() {
-            local sym="$1" got
-            got="$(grep -m1 -E "^${sym}=" .config || true)"
-            printf '  %-52s %s\n' "$sym" "${got:-<MISSING>}"
-            [ "$got" = "${sym}=y" ] || { echo "  ^^^ expected ${sym}=y"; exit 1; }
-          }
-          nsscheck CONFIG_PACKAGE_kmod-qca-nss-drv
-          nsscheck CONFIG_PACKAGE_kmod-qca-nss-ecm
-          nsscheck CONFIG_ATH11K_NSS_SUPPORT
-          nsscheck CONFIG_PACKAGE_MAC80211_NSS_SUPPORT
-          # download path: the tree carries qca-ssdk + qca-nss-dp itself
-          if grep -qE '^CONFIG_PACKAGE_kmod-qca-nss-dp=y' .config; then
-            echo "  ok CONFIG_PACKAGE_kmod-qca-nss-dp"
-          elif grep -qE '^CONFIG_PACKAGE_kmod-qca-ssdk=y' .config; then
-            echo "  ok CONFIG_PACKAGE_kmod-qca-ssdk"
-          else
-            echo "  neither kmod-qca-nss-dp nor kmod-qca-ssdk selected"; exit 1
-          fi
+          echo "== device packages registered (fatal) =="
           # the device's DEVICE_PACKAGES name this package, but only a registered
           # package makes the image; check the scanner, not just our own file
           grep -qE '^[[:space:]]*config PACKAGE_ipq-wifi-jdcloud_re-cs-03([[:space:]]|$)' tmp/.config-package.in \
@@ -299,20 +242,7 @@ jobs:
             echo "  ok device entry in $(basename "$f")"
           done
 
-          echo "== kernel warning flags (fatal: the 6.12 tree promotes warnings) =="
-          grep -qE '^CONFIG_KERNEL_CFLAGS=.*Wno-missing-prototypes' .config \
-            || { echo "  CONFIG_KERNEL_CFLAGS lacks -Wno-missing-prototypes"; exit 1; }
-          echo "  ok CONFIG_KERNEL_CFLAGS silences missing-prototypes"
-          grep -q -- '-Wno-missing-prototypes' feeds/nss_packages/qca-nss-crypto/Makefile \
-            || { echo "  qca-nss-crypto Makefile was not patched"; exit 1; }
-          # gcc 14 makes an implicit declaration a hard error, and the 6.12 HAL
-          # calls of_find_compatible_node() without <linux/of.h>; -include also
-          # fixes the int-returning-assumption pointer truncation on arm64.
-          grep -q -- '-Wno-implicit-function-declaration' feeds/nss_packages/qca-nss-crypto/Makefile \
-            || { echo "  qca-nss-crypto lacks -Wno-implicit-function-declaration"; exit 1; }
-          grep -q -- '-include linux/of.h' feeds/nss_packages/qca-nss-crypto/Makefile \
-            || { echo "  qca-nss-crypto does not force-include <linux/of.h>"; exit 1; }
-          echo "  ok qca-nss-crypto EXTRA_CFLAGS patched (warning flags + of.h)"
+          echo "== module build fixes (fatal) =="
           # rtl8812au-ct forces -Werror inside its own 2016-era vendor Makefile, and
           # gcc 14 both warns more and makes six diagnostics errors outright. The
           # series carries a patch that demotes those six and fixes three typo'd
@@ -414,7 +344,7 @@ jobs:
             ## 📦 OpenWrt Automated Build Release
 
             **Build Date:** ${{ env.RELEASE_DATE }}
-            **Base:** [${{ env.REMOTE_REPOSITORY }}](https://github.com/${{ env.REMOTE_REPOSITORY }}) `${{ env.REMOTE_BRANCH }}` -- OpenWrt 25.12 stable + NSS offload (kernel 6.12)
+            **Base:** [${{ env.REMOTE_REPOSITORY }}](https://github.com/${{ env.REMOTE_REPOSITORY }}) `${{ env.REMOTE_BRANCH }}` -- OpenWrt 25.12 stable (kernel 6.12), device-only patch, no NSS offload
 
             ### 🔄 Main Repository
             **Repository:** [${{ env.REMOTE_REPOSITORY }}](https://github.com/${{ env.REMOTE_REPOSITORY }})
