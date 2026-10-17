@@ -15,7 +15,7 @@ env:
   # person's clone branch of this tree and is deliberately not used.
   REMOTE_REPOSITORY: fanchmwrt/fanchmwrt
   REMOTE_BRANCH: fanchmwrt-25.12.4
-  CONFIG_FILE: re-cs-03.config
+  CONFIG_FILE: re-cs-03-fanchmwrt.config
   CUSTOM_FILES_PATH: files/
   PATCH_DIR: patches-fanchmwrt/
   RELEASE_PREFIX: fanchmwrt-25.12.4
@@ -80,13 +80,12 @@ jobs:
         run: |
           df -hT
           #echo 'src-git custom https://github.com/kiddin9/kwrt-packages' >> feeds.conf.default
-          # argon theme only: passwall2 / openclash are deliberately not built
+          # argon theme only: passwall2 / openclash / accesscontrol deliberately absent
           git clone https://github.com/jerrykuku/luci-theme-argon.git package/feeds/luci/luci-theme-argon
           git clone https://github.com/jerrykuku/luci-app-argon-config.git package/feeds/luci/luci-app-argon-config
           #git clone https://github.com/dgyangxf/luci-app-vlmcsd.git package/feeds/luci/luci-app-vlmcsd
           #git clone https://github.com/im-0/openwrt-package.vlmcsd.git package/utils/vlmcsd
           #git clone https://github.com/sbwml/openwrt-qBittorrent package/feeds/qBittorrent
-          unzip builder_repo/luci-app-accesscontrol.zip -d package/feeds/luci/applications
           ./scripts/feeds update -a 
           ./scripts/feeds install -a
           make defconfig -j$(nproc)
@@ -248,12 +247,32 @@ jobs:
           for sym in CONFIG_PACKAGE_luci-app-openclash CONFIG_PACKAGE_openclash \
                      CONFIG_PACKAGE_luci-app-passwall2 CONFIG_PACKAGE_passwall2 \
                      CONFIG_PACKAGE_dockerd CONFIG_PACKAGE_docker \
-                     CONFIG_PACKAGE_luci-app-dockerman; do
+                     CONFIG_PACKAGE_luci-app-dockerman \
+                     CONFIG_PACKAGE_luci-app-accesscontrol; do
             if grep -qE "^${sym}=[ym]$" .config; then
               echo "  $sym is SET but must not be built"; exit 1
             fi
             printf '  %-48s not-set\n' "$sym"
           done
+
+          echo "== every CONFIG_PACKAGE_*=y in the seed must survive make defconfig (fatal) =="
+          # A symbol kconfig does not know (renamed, wrong feed, typo) is dropped
+          # without a word.  Assert it here instead of finding out on the device.
+          miss=0; n=0
+          while read -r sym; do
+            n=$((n + 1))
+            if grep -qE "^${sym}=[ym]$" .config; then continue; fi
+            k="${sym#CONFIG_}"
+            if grep -qE "^config ${k}( |$)" tmp/.config-package.in 2>/dev/null; then
+              why="kconfig knows it but did not select it (missing dep/feed)"
+            else
+              why="NOT in tmp/.config-package.in (scanner never saw the package)"
+            fi
+            echo "  MISSING in .config: $sym  ->  $why"
+            miss=1
+          done < <(grep -oE '^CONFIG_PACKAGE_[A-Za-z0-9._+-]+=y' builder_repo/${{ env.CONFIG_FILE }} | sed 's/=y$//' | sort -u)
+          echo "  checked $n seed CONFIG_PACKAGE_*=y symbols"
+          [ "$miss" = 0 ] || { echo "  ^^^ seed package(s) dropped by kconfig"; exit 1; }
 
           echo "== RE-CS-03 device must be present (fatal) =="
           grep -qE '^CONFIG_TARGET_qualcommax_ipq50xx_DEVICE_jdcloud_re-cs-03=y' .config \
