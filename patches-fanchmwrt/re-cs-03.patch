@@ -719,9 +719,9 @@ index 0000000..bfb1f20
 +	status = "okay";
 +};
 +
-+&ge_phy {
-+	qcom,dac-preset-short-cable;
-+};
++/* Do NOT set qcom,dac-preset-short-cable on &ge_phy: the OEM board.dtb omits */
++/* it, and the preset lowers the GE PHY DAC drive, making the WAN 1G link   */
++/* flap and downshift to 100 Mbps.                                          */
 +
 +&mdio1 {
 +	status = "okay";
