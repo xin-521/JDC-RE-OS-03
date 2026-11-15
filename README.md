@@ -11,8 +11,10 @@ plus a *seed* `.config`; the trees themselves are never forked.
 | `.github/workflows/build.yaml` | `openwrt/openwrt@v25.12.5` (vanilla 25.12 stable) | `patches-stable/` | `re-cs-03.config` | push (paths below) + manual |
 | `.github/workflows/Fanchmwrt.yaml` | `fanchmwrt/fanchmwrt@fanchmwrt-25.12.6` (official stable) | `patches-fanchmwrt/` | `re-cs-03-fanchmwrt.config` | manual (`workflow_dispatch`) only |
 
-Both end in a GitHub release whose tag is `<prefix>-YYYY-MM-DD-HH-MM-SS`;
-releases keep only the 1st/8th/15th/23rd of each month beyond the newest five.
+Both end in a GitHub release: tag `stable-YYYY-MM-DD` for build.yaml,
+`fanchmwrt-25.12.6-YYYY-MM-DD-HH-MM-SS` for Fanchmwrt.yaml. Beyond the newest
+five, each workflow keeps one build per week and deletes the rest — build.yaml
+keeps days 02/09/16/24, Fanchmwrt keeps 01/08/15/23.
 
 ```sh
 gh workflow run build.yaml --ref main
@@ -38,12 +40,20 @@ WORKLOG.md               dated engineering log, newest decision last
 LICENSES/                OpenWrt license texts carried over with the device patch
 ```
 
-Both series carry the same 12 device files: DTS (`ipq5018-re-cs-03.dts`, ESS model,
-`DEVICE_DTS_DIR=$(DTS_DIR)/qcom` overlay), the two `ipq-wifi` board blobs
-(`board-jdcloud_re-cs-03.{ipq5018,qcn6122}`, sha256 `72dc2f28…`/`8f1a10c9…`),
-`ipq50xx.mk` device block, `board.d/02_network`, `11-ath11k-caldata` (mmC cal),
-`05-wifi-migrate`, eMMC `platform.sh`, `uboot-envtools` (`0:APPSBLENV`), plus two
-build fixes (`tools/gnulib` obstack, `rtl8812au-ct` gcc-14).
+Both series carry the same device payload (11 files): DTS (`ipq5018-re-cs-03.dts`,
+ESS model, installed through the `DEVICE_DTS_DIR=$(DTS_DIR)/qcom` overlay), the
+two `ipq-wifi` board blobs (`board-jdcloud_re-cs-03.{ipq5018,qcn6122}`, sha256
+`72dc2f28…`/`8f1a10c9…`), `ipq50xx.mk` device block, `board.d/02_network`,
+`11-ath11k-caldata` (mmC cal), `05-wifi-migrate`, eMMC `platform.sh`,
+`uboot-envtools` (`0:APPSBLENV`), the `ipq-wifi` Makefile `Build/Prepare` that
+copies the blobs, plus two build fixes (`tools/gnulib` obstack, `rtl8812au-ct`
+gcc-14).
+
+`patches-stable/` is the 14-file superset: it also pins
+`timezone='CST-8'`/`Asia/Shanghai` in `base-files/files/bin/config_generate` and
+`net.netfilter.nf_conntrack_max=165535` in `etc/sysctl.conf`, because vanilla
+OpenWrt defaults to UTC. `patches-fanchmwrt/` needs neither — that tree already
+ships `hostname='FanchmWrt'`, `HKT-8`/`Asia/Hong Kong`.
 
 ## Invariants the workflows assert (do not "simplify" them away)
 
