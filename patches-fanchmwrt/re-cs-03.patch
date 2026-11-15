@@ -7,9 +7,9 @@ index d825f88..87319cb 100644
  	ubootenv_add_mtd "u_env" "0x0" "0x40000" "0x20000"
  	;;
 +jdcloud,re-cs-03)
-+	# APPSBLENV is exactly 0x40000.  fw_env rejects a file whose
-+	# envsize != sectorsize * numsec, so keep the three numbers consistent
-+	# (0x40000 / 0x40000 / 1), like qualcommbe_ipq95xx does.
++	# APPSBLENV is the whole 0x40000 partition and holds a single U-Boot
++	# environment, no redundant copy at 0x10000/0x20000 (verified on the box
++	# 2026-11-15: 0x10000/0x20000 give "Bad CRC", 0x40000 parses 11 vars).
 +	ubootenv_add_mmc "0:APPSBLENV" "" "0x0" "0x40000" "0x40000" "1"
 +	;;
  xiaomi,ax6000)
