@@ -34,8 +34,9 @@ re-cs-03.config          seed for the vanilla 25.12 line
 re-cs-03-fanchmwrt.config seed for the FanchmWrt line
 files/                   overlay copied into the image (rc.local, shadow, sshd
                          hardening, uci-defaults/999-QOL_config: IPv6 + QoL wifi)
-reference/oem/           OEM board.dtb + uboot.mbn, the hardware ground truth
-                         (read-only evidence, not used by CI — see its README)
+reference/oem/           OEM board.dtb + its text dump + uboot.mbn, the hardware
+                         ground truth (read-only evidence, not used by CI)
+tools/                   local checks that mirror CI (see tools/README.md)
 WORKLOG.md               dated engineering log, newest decision last
 LICENSES/                OpenWrt license texts carried over with the device patch
 ```
@@ -76,10 +77,15 @@ ships `hostname='FanchmWrt'`, `HKT-8`/`Asia/Hong Kong`.
 - Every `CONFIG_PACKAGE_*=y`/`=n` line in a seed is re-asserted after
   `make defconfig`, because kconfig drops unknown symbols silently.
 
-## Local checks (offline, in `temp/`)
+## Local checks (see `tools/README.md`)
 
-`temp/fanchmwrt/verify_2512.6.py` re-applies the FanchmWrt series to a pristine
-clone and asserts byte equality, blob hashes, `sh -n`, and that all DTS labels
-resolve; `temp/fanchmwrt/check_bump_2512.6.py` lints the workflow version
-strings, every `run:` block, and that each seed symbol still exists upstream.
-`temp/` is gitignored scratch space (several GB of clones) — safe to delete.
+```sh
+python tools/check_workflows.py                             # repo invariants, offline
+python tools/verify_device_patch.py                         # patch applies, DTS/shell/blobs ok
+python tools/check_workflows.py --tree temp/patchcheck/tree # + seed symbols exist upstream
+python tools/ssh_run.py @tools/router_probe.sh 60           # device readiness, read-only
+python tools/test_sysupgrade.py --yes <image>               # sysupgrade -T, never flashes
+```
+
+`temp/` is gitignored scratch space (the clones the tools make, ~300 MB each)
+and is never needed at runtime — delete it whenever.
