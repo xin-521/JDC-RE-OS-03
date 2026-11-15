@@ -23,7 +23,7 @@ index 9ce5061..ca3098c 100644
 +net.netfilter.nf_conntrack_max=165535
 diff --git a/target/linux/qualcommax/files/arch/arm64/boot/dts/qcom/ipq5018-re-cs-03.dts b/target/linux/qualcommax/files/arch/arm64/boot/dts/qcom/ipq5018-re-cs-03.dts
 new file mode 100644
-index 0000000..bfb1f20
+index 0000000..49eec45
 --- /dev/null
 +++ b/target/linux/qualcommax/files/arch/arm64/boot/dts/qcom/ipq5018-re-cs-03.dts
 @@ -0,0 +1,378 @@
@@ -406,19 +406,42 @@ index 0000000..bfb1f20
 +	qcom,m3-dump-addr = <0x4df00000>;
 +};
 diff --git a/package/boot/uboot-tools/uboot-envtools/files/qualcommax_ipq50xx b/package/boot/uboot-tools/uboot-envtools/files/qualcommax_ipq50xx
-index 6366859..6ceb29b 100644
+index 6366859..964c6d4 100644
 --- a/package/boot/uboot-tools/uboot-envtools/files/qualcommax_ipq50xx
 +++ b/package/boot/uboot-tools/uboot-envtools/files/qualcommax_ipq50xx
-@@ -24,6 +24,9 @@ linksys,mx6200|\
+@@ -24,6 +24,12 @@ linksys,mx6200|\
  linksys,spnmx56)
  	ubootenv_add_mtd "u_env" "0x0" "0x40000" "0x20000"
  	;;
 +jdcloud,re-cs-03)
-+	ubootenv_add_mmc "0:APPSBLENV" "" "0x0" "0x40000" "0x10000"
++	# APPSBLENV is exactly 0x40000.  fw_env rejects a file whose
++	# envsize != sectorsize * numsec, so keep the three numbers consistent
++	# (0x40000 / 0x40000 / 1), like qualcommbe_ipq95xx does.
++	ubootenv_add_mmc "0:APPSBLENV" "" "0x0" "0x40000" "0x40000" "1"
 +	;;
  xiaomi,ax6000)
  	ubootenv_add_mtd "0:appsblenv" "0x0" "0x10000" "0x20000"
  	ubootenv_add_sys_mtd "bdata" "0x0" "0x10000" "0x20000"
+diff --git a/package/boot/uboot-tools/uboot-envtools/files/fw_defaults b/package/boot/uboot-tools/uboot-envtools/files/fw_defaults
+index 42558aa..b03f090 100644
+--- a/package/boot/uboot-tools/uboot-envtools/files/fw_defaults
++++ b/package/boot/uboot-tools/uboot-envtools/files/fw_defaults
+@@ -1,6 +1,14 @@
+ . /lib/functions/uci-defaults.sh
+ 
+-fw_loadenv
++# /etc/board.d/* runs from preinit, while /etc is still the read-only squashfs,
++# and /etc/fw_env.config is only written later (uci-defaults/30_uboot-envtools,
++# after mount_root).  Calling fw_printenv here on a fresh flash prints
++# "Cannot parse config file '/etc/fw_env.config'" and the "Failed to find NVMEM
++# device" line that follows it; nothing below can use /var/run/uboot-env
++# without that file anyway, so only load the environment when it is there.
++if [ -f /etc/fw_env.config ]; then
++	fw_loadenv
++fi
+ 
+ board_config_update
+ 
 diff --git a/package/firmware/ipq-wifi/Makefile b/package/firmware/ipq-wifi/Makefile
 index 649f670..aafc9f9 100644
 --- a/package/firmware/ipq-wifi/Makefile

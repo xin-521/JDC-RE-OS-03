@@ -276,6 +276,27 @@ jobs:
             echo "  warning: radio1 is 5GHz but limited to 20MHz"; fi
           echo "  ok QoL wireless options match the 2.4GHz/5GHz split"
 
+          echo "== LAN must hand out DHCP on 192.168.1.1 (fatal) =="
+          # a device plugged into lan1-3 must get a lease and reach the web UI
+          # without anyone touching the box first
+          for pair in             "network.lan.proto='static'"             "network.lan.ipaddr='192.168.1.1'"             "network.lan.netmask='255.255.255.0'"             "dhcp.lan.dhcpv4='server'"             "dhcp.lan.ignore='0'"             "dhcp.lan.start='100'"             "firewall.@zone[0].input='ACCEPT'" ; do
+            grep -qF "set $pair" files/etc/uci-defaults/999-QOL_config               || { echo "  MISSING: set $pair"; exit 1; }
+            echo "  ok set $pair"
+          done
+          grep -qE '^CONFIG_PACKAGE_dnsmasq-full=y' .config             || { echo "  dnsmasq-full is not selected: no DHCP server in the image"; exit 1; }
+          echo "  ok dnsmasq-full selected"
+
+          echo "== uboot-envtools must stay quiet on the first boot (fatal) =="
+          # /etc/board.d/* runs from preinit while /etc is still the read-only
+          # squashfs, and /etc/fw_env.config only appears after mount_root
+          # (uci-defaults/30_uboot-envtools) -- so fw_printenv must be guarded,
+          # and envsize must equal sectorsize * numsec or fw_env refuses the file.
+          ENVF=package/boot/uboot-tools/uboot-envtools/files
+          grep -qF '[ -f /etc/fw_env.config ]' $ENVF/fw_defaults             || { echo "  fw_defaults calls fw_printenv before /etc/fw_env.config exists"; exit 1; }
+          grep -qF 'ubootenv_add_mmc "0:APPSBLENV" "" "0x0" "0x40000" "0x40000" "1"' $ENVF/qualcommax_ipq50xx             || { echo "  APPSBLENV geometry is not envsize == sectorsize * numsec"; exit 1; }
+          echo "  ok fw_env guard and 0x40000/0x40000/1 geometry"
+
+
           echo "== device packages registered (fatal) =="
           # the device's DEVICE_PACKAGES name this package, but only a registered
           # package makes the image; check the scanner, not just our own file

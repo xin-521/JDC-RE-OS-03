@@ -165,7 +165,8 @@ def main():
     print('[3] shell syntax')
     shells = [f for f in files
               if not f.endswith(('.conf', '.config'))
-              and (f.endswith('.sh') or '/etc/' in f or f.endswith('qualcommax_ipq50xx'))]
+              and (f.endswith('.sh') or '/etc/' in f or f.endswith('qualcommax_ipq50xx')
+                   or '/uboot-envtools/files/' in f)]
     if not shutil.which('sh'):
         note(False, 'no sh on PATH')
     for f in shells:

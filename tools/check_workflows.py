@@ -141,7 +141,7 @@ def main():
         note('luci-app-argon-config' not in [k for k, v in sym.items() if v == 'y'],
              '%s: luci-app-argon-config not selected' % exp['seed'])
 
-    print('[6] QoL wireless options are self-consistent')
+    print('[6] QoL wireless + LAN defaults are self-consistent')
     # hostapd validates the whole BSS and drops the interface on the first error:
     #   "OCV: PMF needs to be enabled whenever using OCV" -> add_iface failed
     qol_txt = read_norm('files/etc/uci-defaults/999-QOL_config')
@@ -154,6 +154,12 @@ def main():
          'radio0 (2.4GHz) htmode=%s is not 80/160MHz' % (htmode.get('radio0') or 'unset'))
     note(not re.match(r'(HT|HE|VHT)20$', htmode.get('radio1', '')),
          'radio1 (5GHz) htmode=%s is wider than 20MHz' % (htmode.get('radio1') or 'unset'))
+    # a device on lan1-3 must get a lease and reach 192.168.1.1 unattended
+    for want in ("set network.lan.proto='static'", "set network.lan.ipaddr='192.168.1.1'",
+                 "set network.lan.netmask='255.255.255.0'", "set dhcp.lan.dhcpv4='server'",
+                 "set dhcp.lan.ignore='0'", "set dhcp.lan.start='100'",
+                 "set firewall.@zone[0].input='ACCEPT'"):
+        note(want in qol_txt, 'QoL has %s' % want)
 
     print('[7] no qcom,dac-preset-short-cable in either series')
     for d in ('patches-stable', 'patches-fanchmwrt'):
@@ -200,6 +206,16 @@ def main():
                 note(True, '%s: %d seed symbols all in-tree' % (exp['seed'], len(syms)))
     else:
         print('[8] skipped (pass --tree <pristine clone> to check seed symbols)')
+
+    if a.tree:
+        print('[9] patched-tree details (uboot-envtools)')
+        envf = os.path.join(a.tree, 'package/boot/uboot-tools/uboot-envtools/files')
+        fwd = read_norm(os.path.join(envf, 'fw_defaults')) if os.path.exists(os.path.join(envf, 'fw_defaults')) else ''
+        note('[ -f /etc/fw_env.config ]' in fwd,
+             'fw_defaults only calls fw_printenv when /etc/fw_env.config exists')
+        ipp = read_norm(os.path.join(envf, 'qualcommax_ipq50xx')) if os.path.exists(os.path.join(envf, 'qualcommax_ipq50xx')) else ''
+        note('ubootenv_add_mmc "0:APPSBLENV" "" "0x0" "0x40000" "0x40000" "1"' in ipp,
+             'APPSBLENV geometry is envsize == sectorsize * numsec')
 
     print()
     if fails:

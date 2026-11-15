@@ -35,6 +35,24 @@ set wireless.radio1.country='DE'
 # Firewall settings
 set firewall.@zone[1].input='DROP'
 set firewall.@zone[1].forward='DROP'
+# zone[0] is the LAN zone: it must stay open, or the box is unreachable from
+# the LAN ports at 192.168.1.1 even though dnsmasq answered the DHCP request.
+set firewall.@zone[0].input='ACCEPT'
+set firewall.@zone[0].output='ACCEPT'
+set firewall.@zone[0].forward='ACCEPT'
+
+# LAN must serve DHCP and answer on 192.168.1.1 out of the box.  Without this a
+# downstream device behind lan1-3 comes up with 169.254.x.x and never reaches
+# the management page.
+set network.lan.proto='static'
+set network.lan.ipaddr='192.168.1.1'
+set network.lan.netmask='255.255.255.0'
+set dhcp.lan.interface='lan'
+set dhcp.lan.ignore='0'
+set dhcp.lan.dhcpv4='server'
+set dhcp.lan.start='100'
+set dhcp.lan.limit='150'
+set dhcp.lan.leasetime='12h'
 
 # Network settings
 set network.globals.packet_steering='0'
