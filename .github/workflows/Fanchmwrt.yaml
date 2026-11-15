@@ -322,6 +322,25 @@ jobs:
             echo "  full wpad selected, QoL 802.11v/proxy_arp will be accepted"
           fi
 
+          echo "== the rest of the QoL wireless options must also be self-consistent (fatal) =="
+          # hostapd validates the whole BSS and drops the interface on the first error:
+          #   "OCV: PMF needs to be enabled whenever using OCV"
+          #   "1 errors found in configuration file" -> hostapd.add_iface failed
+          # OCV is compiled in (CONFIG_OWE) but only usable together with PMF.
+          if grep -qE "default_radio[0-9]+\.ocv='1'" files/etc/uci-defaults/999-QOL_config; then
+            if ! grep -qE "default_radio[0-9]+\.ieee80211w='[12]'" files/etc/uci-defaults/999-QOL_config; then
+              echo "  ocv=1 without ieee80211w=1|2: hostapd will refuse the BSS"; exit 1; fi
+            echo "  ok ocv paired with PMF"
+          else
+            echo "  ok ocv not enabled (hostapd would demand PMF)"
+          fi
+          # radio0 is the IPQ5018 internal 2.4GHz radio, radio1 the QCN6122 5GHz one
+          if grep -qE "^set wireless\.radio0\.htmode='(HE|VHT)(80|160)'" files/etc/uci-defaults/999-QOL_config; then
+            echo "  radio0 is 2.4GHz but is pinned to an 80/160MHz htmode"; exit 1; fi
+          if grep -qE "^set wireless\.radio1\.htmode='(HT|HE|VHT)20'" files/etc/uci-defaults/999-QOL_config; then
+            echo "  warning: radio1 is 5GHz but limited to 20MHz"; fi
+          echo "  ok QoL wireless options match the 2.4GHz/5GHz split"
+
           echo "== RE-CS-03 device must be present (fatal) =="
           grep -qE '^CONFIG_TARGET_qualcommax_ipq50xx_DEVICE_jdcloud_re-cs-03=y' .config \
             || { echo "  the device symbol is missing -- patch not applied?"; exit 1; }

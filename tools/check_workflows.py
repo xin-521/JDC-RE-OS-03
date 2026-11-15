@@ -55,6 +55,12 @@ def read(p):
     return io.open(p, encoding='utf-8', newline='').read()
 
 
+def read_norm(p):
+    # the working tree is checked out with core.autocrlf=true, so parse content
+    # with LF regardless of what git put on disk
+    return read(p).replace('\r\n', '\n')
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument('--tree', help='a pristine clone of the upstream tree, enables [7]')
@@ -120,7 +126,7 @@ def main():
              '%s restore-keys=%s' % (wf, keys))
 
     print('[5] seed hygiene')
-    qol = read('files/etc/uci-defaults/999-QOL_config')
+    qol = read_norm('files/etc/uci-defaults/999-QOL_config')
     qol_needs_full_wpad = bool(re.search(r'bss_transition|wnm_sleep_mode|proxy_arp', qol))
     for wf, exp in EXPECT.items():
         seed = read(exp['seed'])
@@ -135,7 +141,21 @@ def main():
         note('luci-app-argon-config' not in [k for k, v in sym.items() if v == 'y'],
              '%s: luci-app-argon-config not selected' % exp['seed'])
 
-    print('[6] no qcom,dac-preset-short-cable in either series')
+    print('[6] QoL wireless options are self-consistent')
+    # hostapd validates the whole BSS and drops the interface on the first error:
+    #   "OCV: PMF needs to be enabled whenever using OCV" -> add_iface failed
+    qol_txt = read_norm('files/etc/uci-defaults/999-QOL_config')
+    ocv = re.findall(r"(?m)^set wireless\.(default_radio\d+)\.ocv='1'$", qol_txt)
+    pmf = set(re.findall(r"(?m)^set wireless\.(default_radio\d+)\.ieee80211w='[12]'$", qol_txt))
+    note(all(b in pmf for b in ocv), 'ocv=1 implies ieee80211w=1|2 (ocv blocks: %s)' % (ocv or 'none'))
+    # radio0 = IPQ5018 internal 2.4GHz, radio1 = QCN6122 5GHz (see the DTS comments)
+    htmode = dict(re.findall(r"(?m)^set wireless\.(radio\d+)\.htmode='([^']+)'$", qol_txt))
+    note(not re.match(r'(HE|VHT)(80|160)$', htmode.get('radio0', '')),
+         'radio0 (2.4GHz) htmode=%s is not 80/160MHz' % (htmode.get('radio0') or 'unset'))
+    note(not re.match(r'(HT|HE|VHT)20$', htmode.get('radio1', '')),
+         'radio1 (5GHz) htmode=%s is wider than 20MHz' % (htmode.get('radio1') or 'unset'))
+
+    print('[7] no qcom,dac-preset-short-cable in either series')
     for d in ('patches-stable', 'patches-fanchmwrt'):
         for f in sorted(os.listdir(d)):
             if not f.endswith('.patch'):
@@ -145,7 +165,7 @@ def main():
             note(not hits, '%s/%s has no enabled dac-preset (lines %s)' % (d, f, hits))
 
     if a.tree:
-        print('[7] seed symbols exist in %s' % a.tree)
+        print('[8] seed symbols exist in %s' % a.tree)
         known = set()
         for dp, dns, fns in os.walk(a.tree):
             dns[:] = [x for x in dns if x not in ('.git', 'build_dir', 'staging_dir', 'bin', 'dl', 'tmp')]
@@ -159,7 +179,7 @@ def main():
                 known.update(re.findall(r'define\s+Package/([A-Za-z0-9._+-]+)', txt))
                 known.update('kmod-' + m for m in re.findall(r'call\s+KernelPackage,([A-Za-z0-9._+-]+)', txt))
         for wf, exp in EXPECT.items():
-            seed = read(exp['seed'])
+            seed = read_norm(exp['seed'])
             syms = sorted(set(re.findall(r'(?m)^CONFIG_PACKAGE_([A-Za-z0-9._+-]+)=[yn]$', seed)))
             unknown = [s for s in syms if s not in known
                        and not s.startswith(('ath11k-firmware-', 'ipq-wifi-'))]
@@ -179,7 +199,7 @@ def main():
             else:
                 note(True, '%s: %d seed symbols all in-tree' % (exp['seed'], len(syms)))
     else:
-        print('[7] skipped (pass --tree <pristine clone> to check seed symbols)')
+        print('[8] skipped (pass --tree <pristine clone> to check seed symbols)')
 
     print()
     if fails:

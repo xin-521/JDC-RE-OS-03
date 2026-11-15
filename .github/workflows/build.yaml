@@ -250,6 +250,32 @@ jobs:
           grep -q "set dhcp.lan.dhcpv6='server'" files/etc/uci-defaults/999-QOL_config
           echo "  ok IPv6 enabled (lan/wan/br-lan, LAN RA+DHCPv6 server)"
 
+          echo "== QoL wireless options must be accepted by the shipped wpad (fatal) =="
+          # 999-QOL_config is shared with the FanchmWrt line and hostapd validates the
+          # WHOLE BSS: the first rejected item makes hostapd.add_iface fail and the
+          # radio never comes up.  Two real incidents so far: wpad-basic without
+          # WNM/PROXYARP, and ocv=1 without PMF.
+          if grep -qE 'bss_transition|wnm_sleep_mode|proxy_arp' files/etc/uci-defaults/999-QOL_config; then
+            if grep -qE '^CONFIG_PACKAGE_wpad-basic[a-z0-9-]*=[ym]$' .config; then
+              echo "  QoL needs WNM/PROXYARP but a *basic* wpad is selected"; exit 1; fi
+            grep -qE '^CONFIG_PACKAGE_wpad(-openssl|-mbedtls|-wolfssl)?=[ym]$' .config \
+              || { echo "  QoL needs WNM/PROXYARP but no full wpad is in .config"; exit 1; }
+            echo "  ok full wpad selected for WNM/PROXYARP"
+          fi
+          if grep -qE "default_radio[0-9]+\.ocv='1'" files/etc/uci-defaults/999-QOL_config; then
+            if ! grep -qE "default_radio[0-9]+\.ieee80211w='[12]'" files/etc/uci-defaults/999-QOL_config; then
+              echo "  ocv=1 without ieee80211w=1|2: 'OCV: PMF needs to be enabled'"; exit 1; fi
+            echo "  ok ocv paired with PMF"
+          else
+            echo "  ok ocv not enabled (hostapd would demand PMF)"
+          fi
+          # radio0 is the IPQ5018 internal 2.4GHz radio, radio1 the QCN6122 5GHz one
+          if grep -qE "^set wireless\.radio0\.htmode='(HE|VHT)(80|160)'" files/etc/uci-defaults/999-QOL_config; then
+            echo "  radio0 is 2.4GHz but is pinned to an 80/160MHz htmode"; exit 1; fi
+          if grep -qE "^set wireless\.radio1\.htmode='(HT|HE|VHT)20'" files/etc/uci-defaults/999-QOL_config; then
+            echo "  warning: radio1 is 5GHz but limited to 20MHz"; fi
+          echo "  ok QoL wireless options match the 2.4GHz/5GHz split"
+
           echo "== device packages registered (fatal) =="
           # the device's DEVICE_PACKAGES name this package, but only a registered
           # package makes the image; check the scanner, not just our own file
