@@ -361,6 +361,31 @@ jobs:
           grep -qF 'ubootenv_add_mmc "0:APPSBLENV" "" "0x0" "0x40000" "0x40000" "1"' $ENVF/qualcommax_ipq50xx             || { echo "  APPSBLENV geometry is not envsize == sectorsize * numsec"; exit 1; }
           echo "  ok fw_env guard and 0x40000/0x40000/1 geometry"
 
+          echo "== qca8337 CPU link must keep SGMII auto-negotiation (fatal) =="
+          # Kernel 6.12.100+ backported upstream e0a77b1ed9, which sets
+          # QCA8K_PORT_PAD_SGMII_FORCE_MODE on fixed-link CPU ports.  Upstream
+          # still ships 0751, which force-enables SGMII auto-negotiation on the
+          # same PAD (QCA8K_REG_PWS / SERDES_AEN_DIS).  Both at once leave the
+          # qca8337 CPU link of this board "up" in phylink's view while not a
+          # single frame crosses it: LAN dead, WAN fine (it is on the SoC's
+          # internal GE PHY).  The device series must strip the force mode bit.
+          # Upstream OpenWrt instead dropped 0751 in commit 3608c705e1, together
+          # with adding the force mode patch -- fanchmwrt has not, so the two
+          # meet in this tree.
+          QCA8K_AN=target/linux/qualcommax/patches-6.12/0751-net-dsa-qca8k-always-enable-SGMII-auto-negotiation.patch
+          [ -f "$QCA8K_AN" ] || { echo "  0751 (SGMII AN workaround) is gone from upstream -- re-check the qca8k CPU link before trusting this build"; exit 1; }
+          KVER=$(sed -n 's/^LINUX_VERSION-6\.12 = //p' target/linux/generic/kernel-6.12)
+          echo "  upstream kernel $KVER, 0751 (SGMII AN) present"
+          if awk -v v="$KVER" 'BEGIN{split(v,a,".");exit !(a[1]>6||(a[1]==6&&(a[2]>12||(a[2]==12&&a[3]>=100))))}'; then
+            QCA8K_FM=target/linux/qualcommax/patches-6.12/0799-net-dsa-qca8k-do-not-use-SGMII-PAD-force-mode-on-qca8337.patch
+            [ -f "$QCA8K_FM" ] || { echo "  kernel $KVER has force mode but $(basename $QCA8K_FM) is missing -- LAN will carry no traffic"; exit 1; }
+            grep -q '^-.*QCA8K_PORT_PAD_SGMII_FORCE_MODE' "$QCA8K_FM" \
+              || { echo "  $(basename $QCA8K_FM) no longer removes the force mode bit"; exit 1; }
+            echo "  ok force mode stripped by $(basename $QCA8K_FM)"
+          else
+            echo "  kernel $KVER predates force mode support, nothing to strip"
+          fi
+
 
           echo "== RE-CS-03 device must be present (fatal) =="
           grep -qE '^CONFIG_TARGET_qualcommax_ipq50xx_DEVICE_jdcloud_re-cs-03=y' .config \

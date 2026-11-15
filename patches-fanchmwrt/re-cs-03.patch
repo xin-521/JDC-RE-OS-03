@@ -965,6 +965,69 @@ index 7fe9728..6c1ccc8 100644
 +		;;
 +	esac
 +}
+diff --git a/target/linux/qualcommax/patches-6.12/0799-net-dsa-qca8k-do-not-use-SGMII-PAD-force-mode-on-qca8337.patch b/target/linux/qualcommax/patches-6.12/0799-net-dsa-qca8k-do-not-use-SGMII-PAD-force-mode-on-qca8337.patch
+new file mode 100644
+index 0000000..171e212
+--- /dev/null
++++ b/target/linux/qualcommax/patches-6.12/0799-net-dsa-qca8k-do-not-use-SGMII-PAD-force-mode-on-qca8337.patch
+@@ -0,0 +1,57 @@
++From b118239768fa51a5c9cff14d0bdc528a2a449938 Mon Sep 17 00:00:00 2001
++From: JDC-RE-OS-03 device port <dev@example.invalid>
++Date: Sun, 15 Nov 2026 22:50:37 +0800
++Subject: [PATCH] net: dsa: qca8k: do not use SGMII PAD force mode on qca8337
++
++Kernel 6.12.100+ carries the backport of upstream e0a77b1ed9 ("net: dsa:
++qca8k: Add support for force mode for fixed link topology"), which sets
++QCA8K_PORT_PAD_SGMII_FORCE_MODE on qca8337 CPU ports that use a fixed link
++without in-band status.
++
++OpenWrt (and fanchmwrt 25.12.6) still ship
++0751-net-dsa-qca8k-always-enable-SGMII-auto-negotiation.patch, which
++clears QCA8K_PWS_SERDES_AEN_DIS, i.e. it keeps SGMII auto-negotiation
++enabled on that very same PAD.  The two settings cannot be used together:
++with force mode on and auto-negotiation on, the CPU link of the JDCloud
++RE-CS-03 (qca8337 port 6 <-> IPQ5018 MAC1) still comes up as far as
++phylink is concerned - "Link is Up - 1Gbps/Full" - but not a single frame
++crosses it in either direction.  Only the LAN side is affected; the WAN
++port sits on the SoC's internal GE PHY and keeps working.
++
++Upstream OpenWrt resolved the conflict by dropping 0751 in the same
++series that added force mode support (commit 3608c705e1, "qualcommax:
++ipq50xx: Add force mode support for qca8k switch").  fanchmwrt did not,
++so the two meet there.  Firmware built from the previous
++fanchmwrt-25.12.4 line (kernel 6.12.87, no force mode) works on this
++board, hence keep that behaviour and leave the force mode bit alone.
++
++Doing this unconditionally is acceptable in this tree because the build
++only produces the JDCloud RE-CS-03 image.
++---
++ drivers/net/dsa/qca/qca8k-8xxx.c | 12 +++++-------
++ 1 file changed, 5 insertions(+), 7 deletions(-)
++
++diff --git a/drivers/net/dsa/qca/qca8k-8xxx.c b/drivers/net/dsa/qca/qca8k-8xxx.c
++index d3e7ce7..0165934 100644
++--- a/drivers/net/dsa/qca/qca8k-8xxx.c
+++++ b/drivers/net/dsa/qca/qca8k-8xxx.c
++@@ -1616,14 +1616,12 @@ static int qca8k_pcs_config(struct phylink_pcs *pcs, unsigned int neg_mode,
++ 			QCA8K_PORT0_PAD_SGMII_TXCLK_FALLING_EDGE) : 0;
++ 
++ 	/*
++-	 * (Un)set force mode on QCA8337 only, don't include it in the mask for
++-	 * others. It is written to the PORT0 PAD register for both port 0 and 6.
+++	 * JDCloud RE-CS-03: leave QCA8K_PORT_PAD_SGMII_FORCE_MODE alone.
+++	 * This tree keeps SGMII auto-negotiation enabled through
+++	 * 0751-net-dsa-qca8k-always-enable-SGMII-auto-negotiation.patch;
+++	 * force mode on top of that leaves the qca8337 CPU link "up" while
+++	 * carrying no frames at all.
++ 	 */
++-	if (priv->switch_id == QCA8K_ID_QCA8337) {
++-		if (neg_mode == PHYLINK_PCS_NEG_OUTBAND)
++-			val |= QCA8K_PORT_PAD_SGMII_FORCE_MODE;
++-		mask |= QCA8K_PORT_PAD_SGMII_FORCE_MODE;
++-	}
++ 
++ 	if (mask)
++ 		ret = qca8k_rmw(priv, reg, mask, val);
 diff --git a/tools/gnulib/patches/210-obstack-empty-SMALL_PTRDIFF_T.patch b/tools/gnulib/patches/210-obstack-empty-SMALL_PTRDIFF_T.patch
 new file mode 100644
 index 0000000..5256006

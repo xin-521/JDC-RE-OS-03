@@ -217,6 +217,25 @@ def main():
         note('ubootenv_add_mmc "0:APPSBLENV" "" "0x0" "0x40000" "0x40000" "1"' in ipp,
              'APPSBLENV geometry is envsize == sectorsize * numsec')
 
+    print('[10] qca8337 CPU link fix is wired up')
+    # Kernel 6.12.100+ backported upstream e0a77b1ed9, which sets
+    # QCA8K_PORT_PAD_SGMII_FORCE_MODE on fixed-link CPU ports.  Upstream still
+    # ships 0751, which force-enables SGMII auto-negotiation on the very same
+    # PAD, and the combination leaves the qca8337 CPU link "up" with zero
+    # frames: LAN dead, WAN fine.  The fanchmwrt series must strip the bit, and
+    # both workflows must trip if 0751 ever disappears upstream.
+    hits = [f for f in sorted(os.listdir('patches-fanchmwrt'))
+            if f.endswith('.patch') and
+            re.search(r'(?m)^\+?-.*QCA8K_PORT_PAD_SGMII_FORCE_MODE',
+                      read_norm(os.path.join('patches-fanchmwrt', f)))]
+    note(bool(hits),
+         'patches-fanchmwrt strips QCA8K_PORT_PAD_SGMII_FORCE_MODE (%s)'
+         % (', '.join(hits) or 'no series does'))
+    for wf in EXPECT:
+        note('0751-net-dsa-qca8k-always-enable-SGMII-auto-negotiation.patch'
+             in docs[wf][1],
+             '%s verify trips if 0751 (SGMII AN workaround) is gone' % wf)
+
     print()
     if fails:
         print('FAILED %d check(s)' % len(fails))
