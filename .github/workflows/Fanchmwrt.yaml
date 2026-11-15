@@ -7,14 +7,14 @@ permissions:
 on:
   #push:
     #branches:
-      #- fanchmwrt-25.12.4
+      #- fanchmwrt-25.12.6
   workflow_dispatch:
 
 env:
   # Upstream FanchmWrt project. Super-Henry/Fanchmwrt@henry-25.12.4 is one
   # person's clone branch of this tree and is deliberately not used.
   REMOTE_REPOSITORY: fanchmwrt/fanchmwrt
-  REMOTE_BRANCH: fanchmwrt-25.12.4
+  REMOTE_BRANCH: fanchmwrt-25.12.6
   CONFIG_FILE: re-cs-03-fanchmwrt.config
   CUSTOM_FILES_PATH: files/
   # Deliberately not PATCH_DIR. make imports the job environment, and PATCH_DIR
@@ -24,8 +24,8 @@ env:
   # so configure.py never learns --no-rebuild and the build dies with
   # "configure.py: error: no such option: --no-rebuild".
   DEVICE_PATCH_DIR: patches-fanchmwrt/
-  RELEASE_PREFIX: fanchmwrt-25.12.4
-  ENV: fanchmwrt-25.12.4
+  RELEASE_PREFIX: fanchmwrt-25.12.6
+  ENV: fanchmwrt-25.12.6
 
 jobs:
   check_commits:

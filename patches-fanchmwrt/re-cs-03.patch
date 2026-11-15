@@ -1,8 +1,8 @@
 diff --git a/package/boot/uboot-tools/uboot-envtools/files/qualcommax_ipq50xx b/package/boot/uboot-tools/uboot-envtools/files/qualcommax_ipq50xx
-index 6366859..6ceb29b 100644
+index d825f88..12b4f26 100644
 --- a/package/boot/uboot-tools/uboot-envtools/files/qualcommax_ipq50xx
 +++ b/package/boot/uboot-tools/uboot-envtools/files/qualcommax_ipq50xx
-@@ -24,6 +24,9 @@ linksys,mx6200|\
+@@ -25,6 +25,9 @@ linksys,mx6200|\
  linksys,spnmx56)
  	ubootenv_add_mtd "u_env" "0x0" "0x40000" "0x20000"
  	;;
@@ -13,7 +13,7 @@ index 6366859..6ceb29b 100644
  	ubootenv_add_mtd "0:appsblenv" "0x0" "0x10000" "0x20000"
  	ubootenv_add_sys_mtd "bdata" "0x0" "0x10000" "0x20000"
 diff --git a/package/firmware/ipq-wifi/Makefile b/package/firmware/ipq-wifi/Makefile
-index d447eef..26405c6 100644
+index d3605dd..e5320c9 100644
 --- a/package/firmware/ipq-wifi/Makefile
 +++ b/package/firmware/ipq-wifi/Makefile
 @@ -16,6 +16,11 @@ include $(INCLUDE_DIR)/package.mk
@@ -28,7 +28,7 @@ index d447eef..26405c6 100644
  # Use ath10k-bdencoder from https://github.com/qca/qca-swiss-army-knife.git
  # to generate the board-* files here.
  #
-@@ -46,6 +51,7 @@ ALLWIFIBOARDS:= \
+@@ -47,6 +52,7 @@ ALLWIFIBOARDS:= \
  	glinet_gl-b3000 \
  	ignitenet_ss-w2-ac2600 \
  	iodata_wn-dax3000gr \
@@ -36,7 +36,7 @@ index d447eef..26405c6 100644
  	linksys_homewrk \
  	linksys_mr5500 \
  	linksys_mr6350 \
-@@ -252,6 +258,7 @@ $(eval $(call generate-ipq-wifi-package,netgear_sxk80,Netgear SXK80))
+@@ -256,6 +262,7 @@ $(eval $(call generate-ipq-wifi-package,netgear_sxk80,Netgear SXK80))
  $(eval $(call generate-ipq-wifi-package,netgear_wax214,Netgear WAX214))
  $(eval $(call generate-ipq-wifi-package,netgear_wax218,Netgear WAX218))
  $(eval $(call generate-ipq-wifi-package,netgear_wax610,Netgear WAX610))
@@ -453,7 +453,7 @@ index 0000000..0c33f8d
 + #include <drv_conf.h>
 diff --git a/target/linux/qualcommax/files/arch/arm64/boot/dts/qcom/ipq5018-re-cs-03.dts b/target/linux/qualcommax/files/arch/arm64/boot/dts/qcom/ipq5018-re-cs-03.dts
 new file mode 100644
-index 0000000..bfb1f20
+index 0000000..49eec45
 --- /dev/null
 +++ b/target/linux/qualcommax/files/arch/arm64/boot/dts/qcom/ipq5018-re-cs-03.dts
 @@ -0,0 +1,378 @@
@@ -836,10 +836,10 @@ index 0000000..bfb1f20
 +	qcom,m3-dump-addr = <0x4df00000>;
 +};
 diff --git a/target/linux/qualcommax/image/ipq50xx.mk b/target/linux/qualcommax/image/ipq50xx.mk
-index 7fab522..212ffd5 100644
+index 60348cc..1c31a95 100644
 --- a/target/linux/qualcommax/image/ipq50xx.mk
 +++ b/target/linux/qualcommax/image/ipq50xx.mk
-@@ -91,6 +91,22 @@ define Device/iodata_wn-dax3000gr
+@@ -107,6 +107,22 @@ define Device/iodata_wn-dax3000gr
  endef
  TARGET_DEVICES += iodata_wn-dax3000gr
  
@@ -863,11 +863,11 @@ index 7fab522..212ffd5 100644
  	$(call Device/FitImageLzma)
  	DEVICE_VENDOR := Linksys
 diff --git a/target/linux/qualcommax/ipq50xx/base-files/etc/board.d/02_network b/target/linux/qualcommax/ipq50xx/base-files/etc/board.d/02_network
-index 09a68d7..e1d38ba 100644
+index 16aa187..70c0ac7 100644
 --- a/target/linux/qualcommax/ipq50xx/base-files/etc/board.d/02_network
 +++ b/target/linux/qualcommax/ipq50xx/base-files/etc/board.d/02_network
-@@ -18,6 +18,7 @@ ipq50xx_setup_interfaces()
- 		;;
+@@ -19,6 +19,7 @@ ipq50xx_setup_interfaces()
+ 	cmcc,mr3000d-ci|\
  	cmcc,pz-l8|\
  	linksys,mx2000|\
 +	jdcloud,re-cs-03|\
@@ -875,10 +875,10 @@ index 09a68d7..e1d38ba 100644
  	linksys,spnmx56|\
  	xiaomi,ax6000)
 diff --git a/target/linux/qualcommax/ipq50xx/base-files/etc/hotplug.d/firmware/11-ath11k-caldata b/target/linux/qualcommax/ipq50xx/base-files/etc/hotplug.d/firmware/11-ath11k-caldata
-index d4a913b..e93af0b 100644
+index 92fd10a..a755786 100644
 --- a/target/linux/qualcommax/ipq50xx/base-files/etc/hotplug.d/firmware/11-ath11k-caldata
 +++ b/target/linux/qualcommax/ipq50xx/base-files/etc/hotplug.d/firmware/11-ath11k-caldata
-@@ -32,6 +32,10 @@ case "$FIRMWARE" in
+@@ -39,6 +39,10 @@ case "$FIRMWARE" in
  		ath11k_remove_regdomain
  		ath11k_set_macflag
  		;;
@@ -889,7 +889,7 @@ index d4a913b..e93af0b 100644
  	linksys,mx6200)
  		caldata_extract "0:art" 0x1000 0x20000
  		label_mac=$(mtd_get_mac_ascii devinfo hw_mac_addr)
-@@ -88,6 +92,10 @@ case "$FIRMWARE" in
+@@ -102,6 +106,10 @@ case "$FIRMWARE" in
  		ath11k_remove_regdomain
  		ath11k_set_macflag
  		;;
@@ -913,10 +913,10 @@ index d3460db..628faf3 100644
  yuncore,ax830)
  	migrate_radio 'platform/soc@0/b00a040.wifi1' 'platform/soc@0/b00a040.wifi'
 diff --git a/target/linux/qualcommax/ipq50xx/base-files/lib/upgrade/platform.sh b/target/linux/qualcommax/ipq50xx/base-files/lib/upgrade/platform.sh
-index c6e8d0f..ca2e871 100644
+index 7fe9728..6c1ccc8 100644
 --- a/target/linux/qualcommax/ipq50xx/base-files/lib/upgrade/platform.sh
 +++ b/target/linux/qualcommax/ipq50xx/base-files/lib/upgrade/platform.sh
-@@ -206,6 +206,12 @@ platform_do_upgrade() {
+@@ -207,6 +207,12 @@ platform_do_upgrade() {
  		remove_oem_ubi_volume squashfs
  		nand_do_upgrade "$1"
  		;;
@@ -929,7 +929,7 @@ index c6e8d0f..ca2e871 100644
  	linksys,mx6200)
  		linksys_bootconfig_pre_upgrade "$1"
  		remove_oem_ubi_volume ubi_rootfs
-@@ -242,3 +248,12 @@ platform_do_upgrade() {
+@@ -244,3 +250,12 @@ platform_do_upgrade() {
  		;;
  	esac
  }
