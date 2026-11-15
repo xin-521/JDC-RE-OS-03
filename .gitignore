@@ -1,0 +1,12 @@
+# scratch: pristine upstream clones, downloaded firmware, verification scripts.
+# Multi-GB and fully regenerable -- never commit anything below.
+temp/
+
+# python bytecode from the temp/ helper scripts
+__pycache__/
+*.py[cod]
+
+# OS / editor droppings
+.DS_Store
+Thumbs.db
+desktop.ini
