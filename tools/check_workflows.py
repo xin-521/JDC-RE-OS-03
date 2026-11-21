@@ -18,6 +18,13 @@ Checks
   [6] no `qcom,dac-preset-short-cable` property in either patch series (it makes
       the WAN 1G link flap and downshift to 100M)
   [7] optional --tree: every CONFIG_PACKAGE_*=y/=n symbol of both seeds exists
+  [8] with --tree: seed symbols exist in the upstream tree (kmods are fatal)
+  [9] with --tree: uboot-envtools guard, APPSBLENV geometry, QCN6122 cal branch
+  [10] the qca8337 SGMII force-mode / 0751 invariant is wired into all workflows
+  [11] kernel-6.12's leading-dot version is normalised and the jdcloud branch is
+       asserted inside the QCN6122 case, in every workflow
+  [12] the immortalwrt seed selects wireguard (kmod + tools + LuCI) and the
+       workflow checks the packages in the image manifest
 """
 import argparse
 import io
@@ -267,6 +274,18 @@ def main():
              '%s normalises the leading-dot kernel version' % wf)
         note('cal-ahb-b00a040' in raw and "echo \"  ok QCN6122 cal handler has the jdcloud branch\"" in raw,
              '%s asserts the jdcloud branch in the QCN6122 case' % wf)
+
+    print('[12] wireguard is compiled into the immortalwrt image')
+    # The seed must select all three (module, userspace tool, LuCI proto) and
+    # the workflow must prove they reached the image, not just .config: a
+    # dependency the feed set lacks drops a package without failing defconfig.
+    iseed = read_norm(EXPECT['ImmortalWRT.yaml']['seed'])
+    for s in ('kmod-wireguard', 'wireguard-tools', 'luci-proto-wireguard'):
+        note(bool(re.search(r'(?m)^CONFIG_PACKAGE_%s=y$' % re.escape(s), iseed)),
+             '%s selects CONFIG_PACKAGE_%s=y' % (EXPECT['ImmortalWRT.yaml']['seed'], s))
+    iraw = docs['ImmortalWRT.yaml'][1]
+    note('*jdcloud*.manifest' in iraw and 'is not in $(basename "$MANIFEST")' in iraw,
+         'ImmortalWRT.yaml checks the wireguard packages in the image manifest')
 
     print()
     if fails:

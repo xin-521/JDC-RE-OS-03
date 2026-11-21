@@ -223,6 +223,17 @@ jobs:
           grep -qE '^CONFIG_PACKAGE_f2fs-tools=y' .config || { echo "  f2fs-tools missing: first boot cannot mkfs.f2fs"; exit 1; }
           echo "  ok f2fs kernel module + mkfs.f2fs"
 
+          echo "== wireguard must be selected (fatal) =="
+          # kmod-wireguard (netsupport.mk) pulls chacha20poly1305/curve25519 and
+          # udptunnel4/6; wireguard-tools ships wg + the netifd proto handler;
+          # luci-proto-wireguard is the LuCI editor. A kconfig dependency the
+          # feed does not provide silently drops the whole group.
+          for s in kmod-wireguard wireguard-tools luci-proto-wireguard; do
+            grep -qE "^CONFIG_PACKAGE_${s}=[ym]$" .config \
+              || { echo "  $s was dropped by make defconfig"; exit 1; }
+            echo "  ok CONFIG_PACKAGE_$s"
+          done
+
           echo "== the wireless daemon must match 999-QOL_config (fatal) =="
           if grep -qE 'bss_transition|wnm_sleep_mode|proxy_arp' files/etc/uci-defaults/999-QOL_config; then
             if grep -qE '^CONFIG_PACKAGE_wpad-basic[a-z0-9-]*=[ym]$' .config; then
@@ -375,6 +386,14 @@ jobs:
         run: |
           ls -l bin/targets/qualcommax/ipq50xx/*jdcloud* \
             || { echo "no jdcloud image was produced"; exit 1; }
+          # The manifest is written by the image build step, so unlike the
+          # .config checks above it proves the packages really made it in.
+          MANIFEST=$(ls bin/targets/qualcommax/ipq50xx/*jdcloud*.manifest)
+          for s in kmod-wireguard wireguard-tools luci-proto-wireguard; do
+            grep -qE "^$s " "$MANIFEST" \
+              || { echo "  $s is not in $(basename "$MANIFEST")"; exit 1; }
+            echo "  ok $s in the image manifest"
+          done
 
       - name: Upload artifacts
         uses: actions/upload-artifact@v4

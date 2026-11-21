@@ -107,6 +107,11 @@ force-mode-only wiring, so no `0799` is needed). It also keeps
   never registers — this happened in ImmortalWrt's first revision.
 - Every `CONFIG_PACKAGE_*=y`/`=n` line in a seed is re-asserted after
   `make defconfig`, because kconfig drops unknown symbols silently.
+- The ImmortalWrt image carries WireGuard: `kmod-wireguard` (netsupport.mk,
+  pulls chacha20poly1305/curve25519 + udptunnel4/6), `wireguard-tools` (`wg`
+  plus the netifd proto handler) and `luci-proto-wireguard`. The workflow
+  checks all three in `.config` *and* in the produced `.manifest`, so a feed
+  that drops one cannot ship a silently wireguard-less image.
 
 ## Local checks (see `tools/README.md`)
 
