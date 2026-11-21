@@ -220,6 +220,15 @@ def main():
         ipp = read_norm(os.path.join(envf, 'qualcommax_ipq50xx')) if os.path.exists(os.path.join(envf, 'qualcommax_ipq50xx')) else ''
         note('ubootenv_add_mmc "0:APPSBLENV" "" "0x0" "0x40000" "0x40000" "1"' in ipp,
              'APPSBLENV geometry is envsize == sectorsize * numsec')
+        # QCN6122 cal: the jdcloud branch must sit inside the b00a040 FIRMWARE
+        # case.  Inserting it next to xiaomi,ax6000 applies to the QCN9074
+        # section instead, the hotplug exits 1, phy1 never appears and the 5GHz
+        # AP cannot start (seen on the first immortalwrt series revision).
+        calp = os.path.join(a.tree, 'target/linux/qualcommax/ipq50xx/base-files/etc/hotplug.d/firmware/11-ath11k-caldata')
+        cal = read_norm(calp) if os.path.exists(calp) else ''
+        seg = cal.split('cal-ahb-b00a040.wifi.bin')[1].split('cal-ahb-b00b040.wifi.bin')[0] if 'cal-ahb-b00a040.wifi.bin' in cal else ''
+        note('jdcloud,re-cs-03' in seg,
+             'QCN6122 cal handler has the jdcloud branch')
 
     print('[10] qca8337 CPU link fix is wired up')
     # Kernel 6.12.100+ backported upstream e0a77b1ed9, which sets

@@ -906,7 +906,7 @@ index 16aa187ec8060a6bbe4153bb87864171990bd54e..ae9a938a1ddde3c62cecdd17728771f0
  	linksys,mx5500|\
  	linksys,spnmx56|\
 diff --git a/target/linux/qualcommax/ipq50xx/base-files/etc/hotplug.d/firmware/11-ath11k-caldata b/target/linux/qualcommax/ipq50xx/base-files/etc/hotplug.d/firmware/11-ath11k-caldata
-index 92fd10a04fb7f59f3b27e7596bfc4aa3d0947c87..c6ae8e3c030fb08f4833f88a70b14b25c95a8a05 100644
+index 92fd10a04fb7f59f3b27e7596bfc4aa3d0947c87..a755786c166763206fa1b3345ece364fec16948f 100644
 --- a/target/linux/qualcommax/ipq50xx/base-files/etc/hotplug.d/firmware/11-ath11k-caldata
 +++ b/target/linux/qualcommax/ipq50xx/base-files/etc/hotplug.d/firmware/11-ath11k-caldata
 @@ -39,6 +39,10 @@ case "$FIRMWARE" in
@@ -920,7 +920,7 @@ index 92fd10a04fb7f59f3b27e7596bfc4aa3d0947c87..c6ae8e3c030fb08f4833f88a70b14b25
  	linksys,mx6200)
  		caldata_extract "0:art" 0x1000 0x20000
  		label_mac=$(mtd_get_mac_ascii devinfo hw_mac_addr)
-@@ -131,6 +135,10 @@ case "$FIRMWARE" in
+@@ -102,6 +106,10 @@ case "$FIRMWARE" in
  		ath11k_remove_regdomain
  		ath11k_set_macflag
  		;;
@@ -928,9 +928,9 @@ index 92fd10a04fb7f59f3b27e7596bfc4aa3d0947c87..c6ae8e3c030fb08f4833f88a70b14b25
 +		caldata_extract_mmc "0:ART" 0x26800 0x20000
 +		ath11k_remove_regdomain
 +		;;
- 	xiaomi,ax6000)
- 		caldata_extract "0:art" 0x26800 0x20000
- 		;;
+ 	esac
+ 	;;
+ "ath11k/QCN6122/hw1.0/cal-ahb-b00b040.wifi.bin")
 diff --git a/target/linux/qualcommax/ipq50xx/base-files/etc/hotplug.d/ieee80211/05-wifi-migrate b/target/linux/qualcommax/ipq50xx/base-files/etc/hotplug.d/ieee80211/05-wifi-migrate
 index d3460db582588eefeef0031c9b85277a7869bfdc..628faf38fdd0be67485925bfcd3d5f41efa52f30 100644
 --- a/target/linux/qualcommax/ipq50xx/base-files/etc/hotplug.d/ieee80211/05-wifi-migrate

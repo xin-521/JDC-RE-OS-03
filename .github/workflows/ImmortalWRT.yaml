@@ -206,6 +206,18 @@ jobs:
             || { echo "  caldata_extract_mmc() missing from caldata.sh"; exit 1; }
           echo "  ok caldata_extract_mmc() available"
 
+          echo "== QCN6122 calibration handler must know this board (fatal) =="
+          # ath11k asks for ath11k/QCN6122/hw1.0/cal-ahb-b00a040.wifi.bin.
+          # If the jdcloud branch is not under THAT FIRMWARE case (inserting it
+          # next to xiaomi,ax6000 instead lands in the QCN9074 section), the
+          # hotplug exits 1, phy1 never registers and the 5GHz AP cannot start.
+          # Seen on 2026-11-21 with this series' first revision.
+          CAL=target/linux/qualcommax/ipq50xx/base-files/etc/hotplug.d/firmware/11-ath11k-caldata
+          sed -n '/cal-ahb-b00a040\.wifi\.bin/,/cal-ahb-b00b040\.wifi\.bin/p' "$CAL" \
+            | grep -q 'jdcloud,re-cs-03)' \
+            || { echo "  QCN6122 cal handler has no jdcloud branch: 5GHz will not start"; exit 1; }
+          echo "  ok QCN6122 cal handler has the jdcloud branch"
+
           echo "== eMMC overlay tooling (fatal) =="
           grep -qE '^CONFIG_PACKAGE_kmod-fs-f2fs=y' .config || { echo "  kmod-fs-f2fs missing: no f2fs overlay"; exit 1; }
           grep -qE '^CONFIG_PACKAGE_f2fs-tools=y' .config || { echo "  f2fs-tools missing: first boot cannot mkfs.f2fs"; exit 1; }
