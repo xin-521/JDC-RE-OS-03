@@ -255,6 +255,19 @@ def main():
              in docs[wf][1],
              '%s verify inspects 0799 (SGMII force-mode strip)' % wf)
 
+    print('[11] kernel version parsing + QCN6122 cal placement')
+    # kernel-6.12 stores ".94"/".116"; a bare split(".") turns that into an
+    # empty major and the 0799 force-mode assertion never fires.  Every workflow
+    # must restore the 6.12 prefix.  Likewise every workflow must look for the
+    # jdcloud branch inside the b00a040 (QCN6122) case, not just somewhere in
+    # the caldata file: the wrong placement silently kills 5GHz.
+    for wf in EXPECT:
+        raw = docs[wf][1]
+        note(bool(re.search(r'KVER="6\.12\$\{?KVER\}?"', raw)),
+             '%s normalises the leading-dot kernel version' % wf)
+        note('cal-ahb-b00a040' in raw and "echo \"  ok QCN6122 cal handler has the jdcloud branch\"" in raw,
+             '%s asserts the jdcloud branch in the QCN6122 case' % wf)
+
     print()
     if fails:
         print('FAILED %d check(s)' % len(fails))

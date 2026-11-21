@@ -375,6 +375,10 @@ jobs:
           QCA8K_AN=target/linux/qualcommax/patches-6.12/0751-net-dsa-qca8k-always-enable-SGMII-auto-negotiation.patch
           [ -f "$QCA8K_AN" ] || { echo "  0751 (SGMII AN workaround) is gone from upstream -- re-check the qca8k CPU link before trusting this build"; exit 1; }
           KVER=$(sed -n 's/^LINUX_VERSION-6\.12 = //p' target/linux/generic/kernel-6.12)
+          # kernel-6.12 stores ".94"/".116"; without the prefix split(".") puts
+          # that in a[2] and every a[1] comparison is false, so the force-mode
+          # branch below never ran (the version guard silently passed as "old").
+          case "$KVER" in .*) KVER="6.12$KVER" ;; esac
           echo "  upstream kernel $KVER, 0751 (SGMII AN) present"
           if awk -v v="$KVER" 'BEGIN{split(v,a,".");exit !(a[1]>6||(a[1]==6&&(a[2]>12||(a[2]==12&&a[3]>=100))))}'; then
             QCA8K_FM=target/linux/qualcommax/patches-6.12/0799-net-dsa-qca8k-do-not-use-SGMII-PAD-force-mode-on-qca8337.patch
@@ -405,6 +409,16 @@ jobs:
           grep -qE '^[[:space:]]*config PACKAGE_ipq-wifi-jdcloud_re-cs-03([[:space:]]|$)' tmp/.config-package.in \
             || { echo "  ipq-wifi-jdcloud_re-cs-03 not registered in tmp/.config-package.in"; exit 1; }
           echo "  ok ipq-wifi-jdcloud_re-cs-03 registered"
+          # ath11k asks for QCN6122/hw1.0/cal-ahb-b00a040.wifi.bin, but the
+          # jdcloud branch is easy to insert into the wrong case: placed before
+          # xiaomi,ax6000 it lands in the QCN9074 section, the hotplug exits 1,
+          # the cal file is never generated and the 5GHz phy never registers
+          # (this exact bug shipped in the immortalwrt series on 2026-11-21).
+          CAL=target/linux/qualcommax/ipq50xx/base-files/etc/hotplug.d/firmware/11-ath11k-caldata
+          sed -n '/cal-ahb-b00a040\.wifi\.bin/,/cal-ahb-b00b040\.wifi\.bin/p' "$CAL" \
+            | grep -q 'jdcloud,re-cs-03)' \
+            || { echo "  QCN6122 cal handler has no jdcloud branch: 5GHz will not start"; exit 1; }
+          echo "  ok QCN6122 cal handler has the jdcloud branch"
 
           echo "== tools/ninja：--no-rebuild 补丁必须与它的 Makefile 一致（fatal） =="
           # ninja 的 configure.py 从来就没有 --no-rebuild 选项，Makefile 之所以敢传，

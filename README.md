@@ -97,7 +97,14 @@ force-mode-only wiring, so no `0799` is needed). It also keeps
   - `0751` absent + kernel ≥ 6.12.100 → upstream's force-mode-only wiring, do
     **not** add `0799` (ImmortalWRT.yaml).
   Mixing the two (force mode + forced SGMII AN) leaves LAN "up" but carrying
-  zero frames.
+  zero frames. `kernel-6.12` stores the version as `.116`, so every workflow
+  must prefix `6.12` before comparing — a bare `split(".")` yields an empty
+  major and silently takes the "predates 6.12.100" path.
+- **The `jdcloud,re-cs-03` cal branch must sit inside the QCN6122
+  `cal-ahb-b00a040.wifi.bin` case** (after `yuncore,ax830`, before `esac`).
+  Inserted before `xiaomi,ax6000` it lands in the QCN9074 case instead, the
+  hotplug falls through to `*) exit 1`, no cal file is written and phy1 (5GHz)
+  never registers — this happened in ImmortalWrt's first revision.
 - Every `CONFIG_PACKAGE_*=y`/`=n` line in a seed is re-asserted after
   `make defconfig`, because kconfig drops unknown symbols silently.
 
