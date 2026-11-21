@@ -39,6 +39,10 @@ EXPECT = {
         repository='fanchmwrt/fanchmwrt', branch='fanchmwrt-25.12.6',
         patch_dir='patches-fanchmwrt/', config='re-cs-03-fanchmwrt.config',
         seed='re-cs-03-fanchmwrt.config', release_prefix='fanchmwrt-25.12.6'),
+    'ImmortalWRT.yaml': dict(
+        repository='immortalwrt/immortalwrt', branch='openwrt-25.12',
+        patch_dir='patches-immortalwrt/', config='re-cs-03-immortalwrt.config',
+        seed='re-cs-03-immortalwrt.config', release_prefix='immortalwrt-25.12'),
 }
 MAKE_VARS = ('PATCH_DIR', 'HOST_PATCH_DIR', 'FILES_DIR', 'HOST_FILES_DIR', 'TOPDIR',
              'BUILD_DIR', 'STAGING_DIR', 'PKG_BUILD_DIR', 'KERNEL_PATCHVER')
@@ -162,7 +166,7 @@ def main():
         note(want in qol_txt, 'QoL has %s' % want)
 
     print('[7] no qcom,dac-preset-short-cable in either series')
-    for d in ('patches-stable', 'patches-fanchmwrt'):
+    for d in ('patches-stable', 'patches-fanchmwrt', 'patches-immortalwrt'):
         for f in sorted(os.listdir(d)):
             if not f.endswith('.patch'):
                 continue
@@ -231,10 +235,16 @@ def main():
     note(bool(hits),
          'patches-fanchmwrt strips QCA8K_PORT_PAD_SGMII_FORCE_MODE (%s)'
          % (', '.join(hits) or 'no series does'))
+    # Every line must decide explicitly from upstream's state: immortalwrt has
+    # already dropped 0751 (force-mode-only wiring), the other two still ship
+    # it and therefore need the 0799 strip once the kernel passes 6.12.100.
     for wf in EXPECT:
         note('0751-net-dsa-qca8k-always-enable-SGMII-auto-negotiation.patch'
              in docs[wf][1],
-             '%s verify trips if 0751 (SGMII AN workaround) is gone' % wf)
+             '%s verify inspects 0751 (SGMII AN workaround)' % wf)
+        note('0799-net-dsa-qca8k-do-not-use-SGMII-PAD-force-mode-on-qca8337.patch'
+             in docs[wf][1],
+             '%s verify inspects 0799 (SGMII force-mode strip)' % wf)
 
     print()
     if fails:

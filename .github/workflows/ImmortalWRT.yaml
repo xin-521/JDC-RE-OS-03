@@ -1,0 +1,431 @@
+name: Build ImmortalWrt 25.12 (qualcommax/ipq50xx, jdcloud re-cs-03)
+
+permissions:
+  contents: write
+  actions: write
+
+# Same reasoning as build.yaml: a run takes ~2-3 h, so a newer push must retire
+# the in-flight run instead of letting it publish a stale release. The group is
+# per workflow so it cannot cancel the other two lines.
+concurrency:
+  group: immortalwrt-${{ github.ref }}
+  cancel-in-progress: true
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - '.github/workflows/ImmortalWRT.yaml'
+      - 're-cs-03-immortalwrt.config'
+      - 'patches-immortalwrt/**'
+      - 'files/**'
+  workflow_dispatch:
+
+env:
+  # ImmortalWrt stable branch (openwrt-25.12, kernel 6.12.116 at the time the
+  # device series was generated). Its feeds are ImmortalWrt's own forks of
+  # luci/packages; no third-party feed is added for this line.
+  REMOTE_REPOSITORY: immortalwrt/immortalwrt
+  REMOTE_BRANCH: openwrt-25.12
+  # Deliberately not PATCH_DIR: make imports the job environment, and PATCH_DIR
+  # is an OpenWrt make variable (quilt.mk) every package/tool resolves its
+  # patches/ through. Exporting it strips tools/ninja of its own patch and the
+  # build dies with "configure.py: error: no such option: --no-rebuild".
+  DEVICE_PATCH_DIR: patches-immortalwrt/
+  CONFIG_FILE: re-cs-03-immortalwrt.config
+  CUSTOM_FILES_PATH: files/
+  RELEASE_PREFIX: immortalwrt-25.12
+  ENV: immortalwrt-25.12
+
+jobs:
+  check_commits:
+    name: Check for new commits
+    runs-on: ubuntu-24.04
+    outputs:
+      new_commits: ${{ steps.check_commits.outputs.new_commits }}
+      latest_commit_sha: ${{ steps.check_commits.outputs.latest_commit_sha }}
+    steps:
+      - name: Check for new commits
+        id: check_commits
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          latest_sha=$(gh api "repos/${{ env.REMOTE_REPOSITORY }}/branches/${{ env.REMOTE_BRANCH }}" --jq .commit.sha)
+          release_body=$(gh api "repos/${{ github.repository }}/releases/latest" --jq .body 2>/dev/null || echo "")
+
+          new_commits=$([[ "$release_body" == *"$latest_sha"* ]] && echo "false" || echo "true")
+
+          echo "new_commits=$new_commits" >> "$GITHUB_OUTPUT"
+          echo "latest_commit_sha=$latest_sha" >> "$GITHUB_OUTPUT"
+
+  build:
+    name: Build ImmortalWrt
+    needs: check_commits
+    if: github.event_name == 'workflow_dispatch' || github.event_name == 'push' || needs.check_commits.outputs.new_commits == 'true'
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Install dependencies
+        run: sudo apt update && sudo apt install -y build-essential clang flex bison g++ gawk gcc-multilib g++-multilib gettext git libncurses5-dev libssl-dev python3-setuptools rsync swig unzip zlib1g-dev file wget patch
+
+      - name: Checkout remote repository
+        uses: actions/checkout@v4
+        with:
+          repository: ${{ env.REMOTE_REPOSITORY }}
+          ref: ${{ env.REMOTE_BRANCH }}
+          fetch-depth: 1
+
+      - name: Show tree info
+        run: |
+          df -hT
+          echo "repo:   ${{ env.REMOTE_REPOSITORY }}@${{ env.REMOTE_BRANCH }}"
+          echo "kernel: $(sed -n 's/^KERNEL_PATCHVER:=//p' target/linux/qualcommax/Makefile)"
+          git log -1 --format='tree tip: %H %ad %s' --date=short | tee -a "$GITHUB_STEP_SUMMARY"
+
+      - name: Checkout current repository
+        uses: actions/checkout@v4
+        with:
+          path: "builder_repo"
+
+      - name: Add custom patches
+        run: |
+          set -euo pipefail
+          df -hT
+          # One series, applied atomically. It was generated against exactly this
+          # branch (immortalwrt/immortalwrt@openwrt-25.12) and verified to apply
+          # with no rejects, so any failure here is real upstream drift.
+          shopt -s nullglob
+          applied=0
+          for patch in "builder_repo/${{ env.DEVICE_PATCH_DIR }}"*.patch; do
+            echo "Applying $patch"
+            sha256sum "$patch"
+            git apply --verbose "$patch"
+            applied=$((applied + 1))
+          done
+          [ "$applied" -gt 0 ] || { echo "no patch matched ${{ env.DEVICE_PATCH_DIR }}"; exit 1; }
+          echo "applied $applied patch file(s)" | tee -a "${GITHUB_STEP_SUMMARY:-/dev/null}"
+
+      - name: Update and install feeds
+        run: |
+          df -hT
+          # immortalwrt's own feeds (packages/luci/routing/telephony/video);
+          # luci-theme-argon comes from its luci fork, so no git clone is needed
+          # and luci-app-argon-config must not be added (the theme ships it).
+          grep -q 'immortalwrt/packages' feeds.conf.default || { echo "feeds.conf.default is not ImmortalWrt's"; exit 1; }
+          grep -q 'immortalwrt/luci' feeds.conf.default || { echo "feeds.conf.default has no ImmortalWrt luci feed"; exit 1; }
+          ./scripts/feeds update -a
+          ./scripts/feeds install -a
+          make defconfig -j$(nproc)
+
+      - name: Setup configuration and custom files
+        run: |
+          df -hT
+          # The seed must end with a newline, otherwise `cat` glues its last line
+          # onto the next append and both symbols are silently lost.
+          cat builder_repo/${{ env.CONFIG_FILE }} >> .config
+          echo "" >> .config
+          make defconfig -j$(nproc)
+          make oldconfig
+          mkdir -p ${{ env.CUSTOM_FILES_PATH }}
+          [ -d "builder_repo/${{ env.CUSTOM_FILES_PATH }}" ] && mv builder_repo/${{ env.CUSTOM_FILES_PATH }}* ${{ env.CUSTOM_FILES_PATH }} || true
+
+      - name: Verify configuration and patches applied
+        run: |
+          set -euo pipefail
+          echo "== the job env must not shadow OpenWrt make variables (fatal) =="
+          for v in PATCH_DIR HOST_PATCH_DIR FILES_DIR HOST_FILES_DIR \
+                   TOPDIR BUILD_DIR STAGING_DIR PKG_BUILD_DIR KERNEL_PATCHVER; do
+            if [ -n "$(printenv "$v" || true)" ]; then
+              echo "  $v is exported into the build environment"; exit 1
+            fi
+            printf '  %-16s not exported\n' "$v"
+          done
+
+          echo "== RE-CS-03 device must be selected (fatal) =="
+          grep -qE '^CONFIG_TARGET_qualcommax_ipq50xx_DEVICE_jdcloud_re-cs-03=y' .config \
+            || { echo "  the device symbol is missing -- patch not applied?"; exit 1; }
+          echo "  ok device symbol"
+
+          echo "== every CONFIG_PACKAGE_*=y in the seed must survive make defconfig (fatal) =="
+          miss=0; n=0
+          while read -r sym; do
+            n=$((n + 1))
+            if grep -qE "^${sym}=[ym]$" .config; then continue; fi
+            k="${sym#CONFIG_}"
+            if grep -qE "^config ${k}( |$)" tmp/.config-package.in 2>/dev/null; then
+              why="kconfig knows it but did not select it (missing dep/feed)"
+            else
+              why="NOT in tmp/.config-package.in (scanner never saw the package)"
+            fi
+            echo "  MISSING in .config: $sym  ->  $why"
+            miss=1
+          done < <(grep -oE '^CONFIG_PACKAGE_[A-Za-z0-9._+-]+=y' builder_repo/${{ env.CONFIG_FILE }} | sed 's/=y$//' | sort -u)
+          echo "  checked $n seed CONFIG_PACKAGE_*=y symbols"
+          [ "$miss" = 0 ] || { echo "  ^^^ seed package(s) dropped by kconfig"; exit 1; }
+
+          echo "== the seed's =n lines must also survive make defconfig (fatal) =="
+          nset=0; nn=0
+          while read -r sym; do
+            nn=$((nn + 1))
+            if grep -qE "^${sym}=[ym]$" .config; then
+              echo "  STILL SET in .config: $sym (the seed turned it off)"; nset=1
+            fi
+          done < <(grep -oE '^CONFIG_PACKAGE_[A-Za-z0-9._+-]+=n' builder_repo/${{ env.CONFIG_FILE }} | sed 's/=n$//' | sort -u)
+          echo "  checked $nn seed CONFIG_PACKAGE_*=n symbols"
+          [ "$nset" = 0 ] || { echo "  ^^^ a package the seed disabled came back"; exit 1; }
+
+          echo "== patch artifacts (fatal) =="
+          for f in \
+            target/linux/qualcommax/files/arch/arm64/boot/dts/qcom/ipq5018-re-cs-03.dts \
+            target/linux/qualcommax/ipq50xx/base-files/etc/board.d/02_network \
+            target/linux/qualcommax/ipq50xx/base-files/lib/upgrade/platform.sh \
+            target/linux/qualcommax/ipq50xx/base-files/etc/hotplug.d/firmware/11-ath11k-caldata \
+            package/firmware/ipq-wifi/files/board-jdcloud_re-cs-03.ipq5018 \
+            package/firmware/ipq-wifi/files/board-jdcloud_re-cs-03.qcn6122 ; do
+            [ -f "$f" ] || { echo "  MISSING $f"; exit 1; }
+            echo "  ok $f"
+          done
+          grep -q 'jdcloud,re-cs-03' target/linux/qualcommax/ipq50xx/base-files/lib/upgrade/platform.sh
+          grep -q 'jdcloud,re-cs-03' target/linux/qualcommax/ipq50xx/base-files/etc/board.d/02_network
+          grep -q 'jdcloud_re-cs-03' package/firmware/ipq-wifi/Makefile
+          echo "  ok device wired into platform.sh / 02_network / ipq-wifi"
+
+          echo "== ipq50xx DTS uses the ESS data path (fatal) =="
+          DTS=target/linux/qualcommax/files/arch/arm64/boot/dts/qcom/ipq5018-re-cs-03.dts
+          grep -q 'ethernet0 = &dp1;' "$DTS" || { echo "  $DTS does not use the ESS ports"; exit 1; }
+          grep -q '&switch {' "$DTS" || { echo "  $DTS does not enable the ESS switch"; exit 1; }
+          grep -q 'ethernet = <&dp2>;' "$DTS" || { echo "  $DTS CPU port not on dp2"; exit 1; }
+          grep -q 'MAC_MODE_SGMII_CHANNEL0' "$DTS" || { echo "  $DTS lacks the SGMII mac mode"; exit 1; }
+          echo "  ok DTS: ESS ports wired like every other ipq50xx board"
+
+          echo "== device packages registered (fatal) =="
+          grep -qE '^[[:space:]]*config PACKAGE_ipq-wifi-jdcloud_re-cs-03([[:space:]]|$)' tmp/.config-package.in \
+            || { echo "  ipq-wifi-jdcloud_re-cs-03 not registered in tmp/.config-package.in"; exit 1; }
+          echo "  ok ipq-wifi-jdcloud_re-cs-03 registered"
+          grep -q 'caldata_extract_mmc()' package/base-files/files/lib/functions/caldata.sh \
+            || { echo "  caldata_extract_mmc() missing from caldata.sh"; exit 1; }
+          echo "  ok caldata_extract_mmc() available"
+
+          echo "== eMMC overlay tooling (fatal) =="
+          grep -qE '^CONFIG_PACKAGE_kmod-fs-f2fs=y' .config || { echo "  kmod-fs-f2fs missing: no f2fs overlay"; exit 1; }
+          grep -qE '^CONFIG_PACKAGE_f2fs-tools=y' .config || { echo "  f2fs-tools missing: first boot cannot mkfs.f2fs"; exit 1; }
+          echo "  ok f2fs kernel module + mkfs.f2fs"
+
+          echo "== the wireless daemon must match 999-QOL_config (fatal) =="
+          if grep -qE 'bss_transition|wnm_sleep_mode|proxy_arp' files/etc/uci-defaults/999-QOL_config; then
+            if grep -qE '^CONFIG_PACKAGE_wpad-basic[a-z0-9-]*=[ym]$' .config; then
+              echo "  QoL needs WNM/PROXYARP but a *basic* wpad is selected"; exit 1; fi
+            grep -qE '^CONFIG_PACKAGE_wpad(-openssl|-mbedtls|-wolfssl)?=[ym]$' .config \
+              || { echo "  QoL needs WNM/PROXYARP but no full wpad is in .config"; exit 1; }
+            echo "  ok full wpad selected for WNM/PROXYARP"
+          fi
+          if grep -qE "default_radio[0-9]+\.ocv='1'" files/etc/uci-defaults/999-QOL_config; then
+            if ! grep -qE "default_radio[0-9]+\.ieee80211w='[12]'" files/etc/uci-defaults/999-QOL_config; then
+              echo "  ocv=1 without ieee80211w=1|2: hostapd refuses the BSS"; exit 1; fi
+            echo "  ok ocv paired with PMF"
+          else
+            echo "  ok ocv not enabled"
+          fi
+          if grep -qE "^set wireless\.radio0\.htmode='(HE|VHT)(80|160)'" files/etc/uci-defaults/999-QOL_config; then
+            echo "  radio0 is 2.4GHz but pinned to an 80/160MHz htmode"; exit 1; fi
+          echo "  ok QoL wireless options match the 2.4GHz/5GHz split"
+
+          echo "== LAN must hand out DHCP on 192.168.1.1 (fatal) =="
+          for pair in "network.lan.proto='static'" "network.lan.ipaddr='192.168.1.1'" \
+                      "network.lan.netmask='255.255.255.0'" "dhcp.lan.dhcpv4='server'" \
+                      "dhcp.lan.ignore='0'" "dhcp.lan.start='100'" \
+                      "firewall.@zone[0].input='ACCEPT'"; do
+            grep -qF "set $pair" files/etc/uci-defaults/999-QOL_config \
+              || { echo "  MISSING: set $pair"; exit 1; }
+            echo "  ok set $pair"
+          done
+          grep -qE '^CONFIG_PACKAGE_dnsmasq-full=y' .config \
+            || { echo "  dnsmasq-full not selected: no DHCP server"; exit 1; }
+          echo "  ok dnsmasq-full selected"
+
+          echo "== IPv6 enabled (fatal) =="
+          grep -q "set network.lan.ipv6='1'" files/etc/uci-defaults/999-QOL_config
+          grep -q "set network.wan.ipv6='1'" files/etc/uci-defaults/999-QOL_config
+          grep -q "set network.@device\[0\].ipv6='1'" files/etc/uci-defaults/999-QOL_config
+          grep -q "set dhcp.lan.ra='server'" files/etc/uci-defaults/999-QOL_config
+          echo "  ok IPv6 enabled (lan/wan/br-lan, LAN RA+DHCPv6 server)"
+
+          echo "== uboot-envtools must stay quiet on the first boot (fatal) =="
+          ENVF=package/boot/uboot-tools/uboot-envtools/files
+          grep -qF '[ -f /etc/fw_env.config ]' $ENVF/fw_defaults \
+            || { echo "  fw_defaults calls fw_printenv before /etc/fw_env.config exists"; exit 1; }
+          grep -qF 'ubootenv_add_mmc "0:APPSBLENV" "" "0x0" "0x40000" "0x40000" "1"' $ENVF/qualcommax_ipq50xx \
+            || { echo "  APPSBLENV geometry is not envsize == sectorsize * numsec"; exit 1; }
+          echo "  ok fw_env guard and 0x40000/0x40000/1 geometry"
+
+          echo "== qca8337 CPU link (fatal) =="
+          # Two valid upstream states for a fixed-link qca8337 CPU port:
+          #   a) 0751 (force SGMII AN) is present -> the force-mode bit must be
+          #      stripped once the kernel is >= 6.12.100, otherwise both are set
+          #      and LAN carries zero frames (see the fanchmwrt worklog);
+          #   b) 0751 is absent and the kernel already has the force-mode
+          #      backport (>= 6.12.100) -> upstream's own fixed combination.
+          # immortalwrt is in state (b).  Any other combination must stop.
+          QCA8K_AN=target/linux/qualcommax/patches-6.12/0751-net-dsa-qca8k-always-enable-SGMII-auto-negotiation.patch
+          QCA8K_FM=target/linux/qualcommax/patches-6.12/0799-net-dsa-qca8k-do-not-use-SGMII-PAD-force-mode-on-qca8337.patch
+          # Upstream writes this as either ".116" (OpenWrt/ImmortalWrt) or
+          # "6.12.112" (fanchmwrt); normalize to a full version before comparing,
+          # otherwise a leading-dot value compares as major 0 and the check below
+          # silently falls into the wrong branch.
+          KVER=$(sed -n 's/^LINUX_VERSION-6\.12 = //p' target/linux/generic/kernel-6.12)
+          case "$KVER" in .*) KVER="6.12${KVER}" ;; esac
+          has_force_mode() { awk -v v="$KVER" 'BEGIN{split(v,a,".");exit !(a[1]>6||(a[1]==6&&(a[2]>12||(a[2]==12&&a[3]>=100))))}'; }
+          if [ -f "$QCA8K_AN" ]; then
+            echo "  upstream kernel $KVER still carries 0751 (SGMII AN)"
+            if has_force_mode; then
+              [ -f "$QCA8K_FM" ] || { echo "  kernel $KVER has force mode but $(basename $QCA8K_FM) is missing -- LAN will be dead"; exit 1; }
+              grep -q '^-.*QCA8K_PORT_PAD_SGMII_FORCE_MODE' "$QCA8K_FM" \
+                || { echo "  $(basename $QCA8K_FM) no longer removes the force mode bit"; exit 1; }
+              echo "  ok force mode stripped by $(basename $QCA8K_FM)"
+            else
+              echo "  ok kernel predates force mode; 0751 alone is consistent"
+            fi
+          else
+            has_force_mode \
+              || { echo "  0751 is gone but kernel $KVER predates force mode: neither AN nor force mode is set"; exit 1; }
+            echo "  ok 0751 absent with kernel $KVER: upstream's force-mode-only wiring"
+          fi
+
+          echo "== module build fixes (fatal) =="
+          RTL=package/kernel/rtl8812au-ct/patches/111-fix-sreset-header-guards-and-gcc14-diagnostics.patch
+          [ -f "$RTL" ] || { echo "  $RTL missing (rtl8812au-ct will die)"; exit 1; }
+          grep -q 'Wno-error=implicit-function-declaration' "$RTL" \
+            || { echo "  $RTL lacks the gcc 14 demotions"; exit 1; }
+          echo "  ok rtl8812au-ct build fix in place"
+          GL=tools/gnulib/patches/210-obstack-empty-SMALL_PTRDIFF_T.patch
+          [ -f "$GL" ] || { echo "  $GL missing (tools/elfutils will die)"; exit 1; }
+          grep -q 'SMALL_PTRDIFF_T@0' "$GL" || { echo "  $GL has unexpected content"; exit 1; }
+          echo "  ok gnulib obstack substitution guarded"
+
+          echo "== tools/ninja: the --no-rebuild patch must still match its Makefile (fatal) =="
+          if grep -q -- '--no-rebuild' tools/ninja/Makefile; then
+            NINJA_PATCH=tools/ninja/patches/010-bootstrap-configure-only.patch
+            [ -f "$NINJA_PATCH" ] || { echo "  $NINJA_PATCH missing"; exit 1; }
+            grep -q -- 'no-rebuild' "$NINJA_PATCH" || { echo "  $NINJA_PATCH no longer adds --no-rebuild"; exit 1; }
+            echo "  ok tools/ninja: Makefile and patch agree"
+          else
+            echo "  tools/ninja/Makefile no longer passes --no-rebuild; nothing to assert"
+          fi
+          echo "VERIFY OK"
+
+      - name: Use /mnt for more disk space
+        if: always()
+        run: |
+          sudo mkdir -p /mnt/upper /mnt/work && sudo chmod a+w /mnt/upper
+          sudo mount -t overlay -olowerdir=$(pwd),upperdir=/mnt/upper,workdir=/mnt/work overlay $(pwd) && df -hT
+
+      - name: Restore cache from previous build
+        uses: actions/cache@v4
+        if: always()
+        with:
+          key: openwrt-build-${{ env.REMOTE_BRANCH }}-${{ needs.check_commits.outputs.latest_commit_sha }}
+          # Branch-scoped only: a bare key imports another tree's build_dir with
+          # valid .prepared stamps, so make skips Host/Prepare and reuses it.
+          restore-keys: |
+            openwrt-build-${{ env.REMOTE_BRANCH }}-
+          path: |
+            build_dir
+            dl
+            staging_dir
+            tmp
+
+      - name: Clean up old caches
+        if: always()
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh api repos/${{ github.repository }}/actions/caches --paginate --jq '.actions_caches[0:] | .[] |.key' | while read key; do
+            echo "Removing old cache $key ..."
+            gh api -X DELETE "/repos/${{ github.repository }}/actions/caches?key=$key" 2>/dev/null || true
+          done
+
+      - name: Download packages
+        run: |
+          df -hT
+          ./scripts/feeds update -a
+          make download -j$(nproc)
+
+      - name: Build firmware
+        env:
+          CMAKE_POLICY_VERSION_MINIMUM: 3.5
+        run: |
+          df -hT
+          make check -j$(nproc) FIXUP=1 V=s
+          make -j$(nproc) || make -j1 V=s
+          tar cvzf bin/targets/qualcommax/ipq50xx/snapshots.tar.gz -C bin packages/aarch64_cortex-a53 targets/qualcommax/ipq50xx/packages
+
+      - name: Verify the image exists
+        run: |
+          ls -l bin/targets/qualcommax/ipq50xx/*jdcloud* \
+            || { echo "no jdcloud image was produced"; exit 1; }
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: ipq50xx-images
+          path: bin/targets/qualcommax/ipq50xx
+
+      - name: Check disk space usage
+        if: always()
+        run: df -hT
+
+  release:
+    name: Create release
+    needs: [check_commits, build]
+    if: needs.build.result == 'success'
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Download artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: ipq50xx-images
+          path: firmware
+      - name: Set release date with timestamp
+        run: |
+          echo "RELEASE_DATE=$(date +%F)" >> $GITHUB_ENV
+          echo "RELEASE_TIME=$(date +%H-%M-%S)" >> $GITHUB_ENV
+      - name: Publish release
+        uses: softprops/action-gh-release@master
+        with:
+          files: firmware/*
+          tag_name: ${{ env.RELEASE_PREFIX }}-${{ env.RELEASE_DATE }}-${{ env.RELEASE_TIME }}
+          name: 🚀 ImmortalWrt Build Release ${{ env.RELEASE_DATE }} ${{ env.RELEASE_TIME }}
+          body: |
+            ## 📦 ImmortalWrt Automated Build Release
+
+            **Build Date:** ${{ env.RELEASE_DATE }} ${{ env.RELEASE_TIME }}
+            **Base:** [${{ env.REMOTE_REPOSITORY }}](https://github.com/${{ env.REMOTE_REPOSITORY }}) `${{ env.REMOTE_BRANCH }}` -- ImmortalWrt 25.12 stable (kernel 6.12), device-only patch series
+
+            ### 🔄 Main Repository
+            **Repository:** [${{ env.REMOTE_REPOSITORY }}](https://github.com/${{ env.REMOTE_REPOSITORY }})
+            **Branch:** `${{ env.REMOTE_BRANCH }}` (ImmortalWrt stable)
+            **Commit:** `${{ needs.check_commits.outputs.latest_commit_sha }}`
+
+            ### 📝 Build Information
+            - **Target:** [JDCloud RE-CS-03 后羿/哪吒 IPQ50xx]
+            - **Configuration:** [`${{ env.CONFIG_FILE }}`](${{ env.CONFIG_FILE }})
+            - **Device patch:** [`${{ env.DEVICE_PATCH_DIR }}`](${{ env.DEVICE_PATCH_DIR }})
+
+            ### 📋 Notes
+            - Automated build triggered by ${{ github.event_name }}
+            - Previous releases are automatically cleaned up (keeping latest 5 + one per week)
+            ---
+            _Generated by GitHub Actions 🤖_
+
+      - name: Clean up old releases
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          df -hT
+          gh api repos/${{ github.repository }}/releases --paginate --jq '.[5:10] | .[] | "\(.id) \(.tag_name)"' | while read id tag; do
+            day=$(echo "$tag" | sed -n 's/.*-[0-9]\{4\}-[0-9]\{2\}-\([0-9]\{2\}\)-.*/\1/p')
+            if [ -n "$day" ] && [ "$day" != "01" ] && [ "$day" != "08" ] && [ "$day" != "15" ] && [ "$day" != "23" ]; then
+              echo "Removing old release $tag ..."
+              gh api -X DELETE "repos/${{ github.repository }}/releases/$id" && gh api -X DELETE "repos/${{ github.repository }}/git/refs/tags/$tag" 2>/dev/null || true
+            fi
+          done
