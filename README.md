@@ -10,7 +10,7 @@ plus a *seed* `.config`; the trees themselves are never forked.
 |---|---|---|---|---|
 | `.github/workflows/build.yaml` | `openwrt/openwrt@v25.12.5` (vanilla 25.12 stable) | `patches-stable/` | `re-cs-03.config` | push (paths below) + manual |
 | `.github/workflows/Fanchmwrt.yaml` | `fanchmwrt/fanchmwrt@fanchmwrt-25.12.6` (official stable) | `patches-fanchmwrt/` | `re-cs-03-fanchmwrt.config` | manual (`workflow_dispatch`) only |
-| `.github/workflows/ImmortalWRT.yaml` | `immortalwrt/immortalwrt@openwrt-25.12` (stable) | `patches-immortalwrt/` | `re-cs-03-immortalwrt.config` | push (paths below) + manual |
+| `.github/workflows/ImmortalWRT.yaml` | `immortalwrt/immortalwrt@v25.12.2` (stable release tag) | `patches-immortalwrt/` | `re-cs-03-immortalwrt.config` | push (paths below) + manual |
 
 Each ends in a GitHub release: tag `stable-YYYY-MM-DD` for build.yaml,
 `fanchmwrt-25.12.6-YYYY-MM-DD-HH-MM-SS` for Fanchmwrt.yaml, and
@@ -35,7 +35,7 @@ push lands.
                          stable), ImmortalWRT.yaml (ImmortalWrt stable)
 patches-stable/          device patch series for openwrt/openwrt v25.12.5   <-- active
 patches-fanchmwrt/       device patch series for fanchmwrt-25.12.6          <-- active
-patches-immortalwrt/     device patch series for immortalwrt openwrt-25.12  <-- active
+patches-immortalwrt/     device patch series for immortalwrt v25.12.2       <-- active
 re-cs-03.config          seed for the vanilla 25.12 line
 re-cs-03-fanchmwrt.config seed for the FanchmWrt line
 re-cs-03-immortalwrt.config seed for the ImmortalWrt line
@@ -65,10 +65,12 @@ ships `hostname='FanchmWrt'`, `HKT-8`/`Asia/Hong Kong` — but it adds
 `0799-…force-mode-on-qca8337.patch`, because that kernel (6.12.112) has the
 force-mode backport while the tree still ships `0751` (SGMII AN).
 `patches-immortalwrt/` drops both special cases: ImmortalWrt's
-`default-settings-chn` package already sets `CST-8`/`Asia/Shanghai`, and its
-openwrt-25.12 tree has removed `0751` (kernel 6.12.116 is on upstream's
-force-mode-only wiring, so no `0799` is needed). It also keeps
-`nf_conntrack_max`.
+`default-settings-chn` package already sets `CST-8`/`Asia/Shanghai`, and it
+keeps `nf_conntrack_max`. It pins the **stable release tag `v25.12.2`**
+(kernel 6.12.103: `0751` still present, force mode not backported yet), so it
+needs no `0799` either. The moving `openwrt-25.12` branch head is the
+`25.12-SNAPSHOT` line (kernel 6.12.116, `0751` already dropped) and is
+deliberately **not** what this pipeline builds.
 
 ## Invariants the workflows assert (do not "simplify" them away)
 
@@ -92,14 +94,19 @@ force-mode-only wiring, so no `0799` is needed). It also keeps
 - **No `qcom,dac-preset-short-cable`** on `&ge_phy` (see `reference/oem/README.md`).
 - **qca8337 CPU link has two valid upstream states** and each workflow must pick
   the matching one:
-  - `0751` present + kernel ≥ 6.12.100 → the device series must carry the `0799`
-    strip (build.yaml, Fanchmwrt.yaml);
-  - `0751` absent + kernel ≥ 6.12.100 → upstream's force-mode-only wiring, do
-    **not** add `0799` (ImmortalWRT.yaml).
+  - `0751` present + kernel < 6.12.111 → the force-mode backport does not exist
+    yet, ship neither `0799` (ImmortalWRT.yaml at `v25.12.2`, kernel 6.12.103);
+  - `0751` present + kernel ≥ 6.12.111 → the device series must carry the `0799`
+    strip (Fanchmwrt.yaml today; build.yaml once its kernel passes 6.12.110);
+  - `0751` absent + kernel ≥ 6.12.111 → upstream's force-mode-only wiring, do
+    **not** add `0799`.
   Mixing the two (force mode + forced SGMII AN) leaves LAN "up" but carrying
-  zero frames. `kernel-6.12` stores the version as `.116`, so every workflow
-  must prefix `6.12` before comparing — a bare `split(".")` yields an empty
-  major and silently takes the "predates 6.12.100" path.
+  zero frames. The backport (`e0a77b1ed9`) first ships in stable **6.12.111**
+  (checked against the .109/.110/.111/.112/.113/.116 drivers); the earlier
+  6.12.100 cut-off was wrong and would have demanded `0799` on a 6.12.103 tag
+  where the code it patches does not exist. `kernel-6.12` stores the version as
+  `.103`/`.116`, so every workflow must prefix `6.12` before comparing — a bare
+  `split(".")` yields an empty major and silently takes the "predates" path.
 - **The `jdcloud,re-cs-03` cal branch must sit inside the QCN6122
   `cal-ahb-b00a040.wifi.bin` case** (after `yuncore,ax830`, before `esac`).
   Inserted before `xiaomi,ax6000` it lands in the QCN9074 case instead, the
@@ -119,7 +126,7 @@ force-mode-only wiring, so no `0799` is needed). It also keeps
 python tools/check_workflows.py                             # repo invariants, offline
 python tools/verify_device_patch.py                         # patch applies, DTS/shell/blobs ok
 python tools/verify_device_patch.py \
-    --repo https://github.com/immortalwrt/immortalwrt --branch openwrt-25.12 \
+    --repo https://github.com/immortalwrt/immortalwrt --branch v25.12.2 \
     --patch patches-immortalwrt/re-cs-03-immortalwrt-25.12.patch \
     --workdir temp/patchcheck-immortalwrt                   # ImmortalWrt line
 python tools/check_workflows.py --tree temp/patchcheck/tree # + seed symbols exist upstream

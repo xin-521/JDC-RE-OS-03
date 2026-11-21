@@ -23,11 +23,14 @@ on:
   workflow_dispatch:
 
 env:
-  # ImmortalWrt stable branch (openwrt-25.12, kernel 6.12.116 at the time the
-  # device series was generated). Its feeds are ImmortalWrt's own forks of
-  # luci/packages; no third-party feed is added for this line.
+  # ImmortalWrt's current *stable release*, pinned by tag.  The openwrt-25.12
+  # branch head is the moving SNAPSHOT line (it reports itself as
+  # "ImmortalWrt 25.12-SNAPSHOT r0-03ca1c0"); v25.12.2 (2026-09-06, commit
+  # 4fc16f2, kernel 6.12.103) is the released stable, and its
+  # feeds.conf.default pins luci/packages to exact commits.  The ref may be a
+  # tag or a branch: check_commits resolves it via /commits/<ref>.
   REMOTE_REPOSITORY: immortalwrt/immortalwrt
-  REMOTE_BRANCH: openwrt-25.12
+  REMOTE_BRANCH: v25.12.2
   # Deliberately not PATCH_DIR: make imports the job environment, and PATCH_DIR
   # is an OpenWrt make variable (quilt.mk) every package/tool resolves its
   # patches/ through. Exporting it strips tools/ninja of its own patch and the
@@ -51,7 +54,9 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          latest_sha=$(gh api "repos/${{ env.REMOTE_REPOSITORY }}/branches/${{ env.REMOTE_BRANCH }}" --jq .commit.sha)
+          # /commits/<ref> accepts a branch, a tag or a sha; the old
+          # /branches/<ref> call would 404 now that the ref is a tag.
+          latest_sha=$(gh api "repos/${{ env.REMOTE_REPOSITORY }}/commits/${{ env.REMOTE_BRANCH }}" --jq .sha)
           release_body=$(gh api "repos/${{ github.repository }}/releases/latest" --jq .body 2>/dev/null || echo "")
 
           new_commits=$([[ "$release_body" == *"$latest_sha"* ]] && echo "false" || echo "true")
@@ -284,20 +289,24 @@ jobs:
           echo "== qca8337 CPU link (fatal) =="
           # Two valid upstream states for a fixed-link qca8337 CPU port:
           #   a) 0751 (force SGMII AN) is present -> the force-mode bit must be
-          #      stripped once the kernel is >= 6.12.100, otherwise both are set
+          #      stripped once the kernel is >= 6.12.111, otherwise both are set
           #      and LAN carries zero frames (see the fanchmwrt worklog);
           #   b) 0751 is absent and the kernel already has the force-mode
-          #      backport (>= 6.12.100) -> upstream's own fixed combination.
-          # immortalwrt is in state (b).  Any other combination must stop.
+          #      backport (>= 6.12.111) -> upstream's own fixed combination.
+          # The backport (upstream e0a77b1ed9) first appears in stable 6.12.111:
+          # verified against the 6.12.109/.110/.111/.112/.113/.116 driver, so
+          # 6.12.103 (this tag) still has neither force mode nor a conflict.
+          # v25.12.2 is in state (a)-without-force-mode; the branch head was in
+          # state (b).  Any other combination must stop.
           QCA8K_AN=target/linux/qualcommax/patches-6.12/0751-net-dsa-qca8k-always-enable-SGMII-auto-negotiation.patch
           QCA8K_FM=target/linux/qualcommax/patches-6.12/0799-net-dsa-qca8k-do-not-use-SGMII-PAD-force-mode-on-qca8337.patch
-          # Upstream writes this as either ".116" (OpenWrt/ImmortalWrt) or
+          # Upstream writes this as either ".103"/".116" (OpenWrt/ImmortalWrt) or
           # "6.12.112" (fanchmwrt); normalize to a full version before comparing,
           # otherwise a leading-dot value compares as major 0 and the check below
           # silently falls into the wrong branch.
           KVER=$(sed -n 's/^LINUX_VERSION-6\.12 = //p' target/linux/generic/kernel-6.12)
           case "$KVER" in .*) KVER="6.12${KVER}" ;; esac
-          has_force_mode() { awk -v v="$KVER" 'BEGIN{split(v,a,".");exit !(a[1]>6||(a[1]==6&&(a[2]>12||(a[2]==12&&a[3]>=100))))}'; }
+          has_force_mode() { awk -v v="$KVER" 'BEGIN{split(v,a,".");exit !(a[1]>6||(a[1]==6&&(a[2]>12||(a[2]==12&&a[3]>=111))))}'; }
           if [ -f "$QCA8K_AN" ]; then
             echo "  upstream kernel $KVER still carries 0751 (SGMII AN)"
             if has_force_mode; then
@@ -430,11 +439,11 @@ jobs:
             ## 📦 ImmortalWrt Automated Build Release
 
             **Build Date:** ${{ env.RELEASE_DATE }} ${{ env.RELEASE_TIME }}
-            **Base:** [${{ env.REMOTE_REPOSITORY }}](https://github.com/${{ env.REMOTE_REPOSITORY }}) `${{ env.REMOTE_BRANCH }}` -- ImmortalWrt 25.12 stable (kernel 6.12), device-only patch series
+            **Base:** [${{ env.REMOTE_REPOSITORY }}](https://github.com/${{ env.REMOTE_REPOSITORY }}) `${{ env.REMOTE_BRANCH }}` -- ImmortalWrt 25.12.2 stable release (kernel 6.12, not the 25.12-SNAPSHOT branch head), device-only patch series
 
             ### 🔄 Main Repository
             **Repository:** [${{ env.REMOTE_REPOSITORY }}](https://github.com/${{ env.REMOTE_REPOSITORY }})
-            **Branch:** `${{ env.REMOTE_BRANCH }}` (ImmortalWrt stable)
+            **Ref:** `${{ env.REMOTE_BRANCH }}` (ImmortalWrt stable release tag)
             **Commit:** `${{ needs.check_commits.outputs.latest_commit_sha }}`
 
             ### 📝 Build Information

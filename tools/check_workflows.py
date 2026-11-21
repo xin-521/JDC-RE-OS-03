@@ -47,7 +47,7 @@ EXPECT = {
         patch_dir='patches-fanchmwrt/', config='re-cs-03-fanchmwrt.config',
         seed='re-cs-03-fanchmwrt.config', release_prefix='fanchmwrt-25.12.6'),
     'ImmortalWRT.yaml': dict(
-        repository='immortalwrt/immortalwrt', branch='openwrt-25.12',
+        repository='immortalwrt/immortalwrt', branch='v25.12.2',
         patch_dir='patches-immortalwrt/', config='re-cs-03-immortalwrt.config',
         seed='re-cs-03-immortalwrt.config', release_prefix='immortalwrt-25.12'),
 }
@@ -117,9 +117,11 @@ def main():
         note(os.path.isdir(exp['patch_dir']) and
              any(f.endswith('.patch') for f in os.listdir(exp['patch_dir'])),
              '%s patch dir %s holds a series' % (wf, exp['patch_dir']))
+        # the branch may be a tag ("v25.12.2"), so compare the bare version
+        want = exp['branch'].lstrip('v').split('-')[-1]
         stale = [n for n, l in enumerate(raw.split('\n'), 1)
                  if re.search(r'25\.12\.\d', l) and 'Super-Henry' not in l
-                 and exp['branch'].split('-')[-1] not in l]
+                 and want not in l]
         note(not stale, '%s no stale version string (lines %s)' % (wf, stale))
 
     print('[3] no OpenWrt make variable exported into the job env')
@@ -286,6 +288,13 @@ def main():
     iraw = docs['ImmortalWRT.yaml'][1]
     note('*jdcloud*.manifest' in iraw and 'is not in $(basename "$MANIFEST")' in iraw,
          'ImmortalWRT.yaml checks the wireguard packages in the image manifest')
+    # v25.12.2 is a tag, so /branches/<ref> would 404 and the old 6.12.100
+    # threshold is wrong: the force-mode backport first ships in 6.12.111, and
+    # this tag carries 6.12.103 + 0751, i.e. neither force mode nor a conflict.
+    note('commits/${{ env.REMOTE_BRANCH }}' in iraw,
+         'ImmortalWRT.yaml resolves its tag ref via /commits/<ref>')
+    note('a[3]>=111' in iraw,
+         'ImmortalWRT.yaml uses the 6.12.111 force-mode threshold')
 
     print()
     if fails:
